@@ -1,0 +1,36 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Backup & log
+*.bak
+*.tmp
+*.log
+*~
+
+# macOS system files
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# IDE/Editor settings
+.vscode/
+.settings/
+
+# QGIS temporary
+.qgis2/
+.qgis3/
+*.qgs~
+*.aux.xml
+*.qgz
+
+# Build & distribution
+build/
+dist/
+*.zip
+*.egg-info/
+
+# Environment
+.env
+*.env
