@@ -1,0 +1,37 @@
+[general]
+name=Raster to H3 Converter
+description=Convert raster data into Uber H3 hexagonal polygons using average pixel values. Features include GeoJSON and CSV export, raster metadata extraction, processing time estimation, real-time logging, smart output naming, and automatic dependency handling.
+version=1.2
+qgisMinimumVersion=3.0
+
+author=Dewa Putu Adikarma Mandala
+email=dputu56@gmail.com
+
+changelog=
+  - Real-time progress tracking
+  - Toggle between geometry and centroid output
+  - Auto-naming based on input raster and H3 level
+  - Estimated processing duration per H3 level
+  - Automated pip-based dependency installation
+  - Logging of all activities to external .log file
+
+requiredLibraries=
+  - h3
+  - geopandas
+  - rasterio
+  - shapely
+  - pyproj
+  - pandas
+  - requests
+
+homepage=https://dewaputuam.com
+tracker=https://github.com/dewaputra/raster-to-h3-plugin/issues
+repository=https://github.com/dewaputra/raster-to-h3-plugin
+
+tags=raster,h3,hexagon,geospatial,converter,plugin,qgis,tool
+category=Raster
+experimental=False
+deprecated=False
+lastUpdated=2025-05-23
+pluginSize=~150 KB
+credits=This plugin was developed by Dewa Putu Adikarma Mandala with the assistance of ChatGPT-4o.
