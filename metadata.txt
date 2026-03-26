@@ -1,13 +1,24 @@
 [general]
 name=Raster to H3 Converter
-description=Convert raster data into Uber H3 hexagonal polygons using average pixel values. Features include GeoJSON and CSV export, raster metadata extraction, processing time estimation, real-time logging, smart output naming, and automatic dependency handling.
-version=1.2
+description=Convert raster data into Uber H3 hexagonal polygons with optimized chunked-vectorized engine. Supports multi-level hierarchy aggregation, GeoJSON/CSV export, PostgreSQL export, NoData-aware processing, dynamic time estimation, and automatic dependency handling.
+version=1.3
 qgisMinimumVersion=3.0
 
 author=Dewa Putu Adikarma Mandala
 email=dputu56@gmail.com
 
 changelog=
+  v1.3 (2025-02-12):
+  - Optimized chunked-vectorized engine (NoData pixels skipped automatically)
+  - PostgreSQL export with upsert support
+  - Help panel with H3 resolution reference table (level 0-15)
+  - Dynamic time estimation based on valid pixels and H3 level
+  - Valid/NoData pixel count in metadata summary
+  v1.2:
+  - Hierarchy builder for aggregating child H3 values to parent resolution
+  - New statistical methods including skewness
+  - Added child index/value tracking per parent
+  v1.0:
   - Real-time progress tracking
   - Toggle between geometry and centroid output
   - Auto-naming based on input raster and H3 level
@@ -23,15 +34,17 @@ requiredLibraries=
   - pyproj
   - pandas
   - requests
+  - scipy
+  - psycopg2
 
 homepage=https://dewaputuam.com
 tracker=https://github.com/dewaputra/raster-to-h3-plugin/issues
 repository=https://github.com/dewaputra/raster-to-h3-plugin
 
-tags=raster,h3,hexagon,geospatial,converter,plugin,qgis,tool
+tags=raster,h3,hexagon,geospatial,converter,plugin,qgis,tool,hierarchy,skewness,postgresql,optimized
 category=Raster
 experimental=False
 deprecated=False
-lastUpdated=2025-05-23
-pluginSize=~150 KB
-credits=This plugin was developed by Dewa Putu Adikarma Mandala with the assistance of ChatGPT-4o.
+lastUpdated=2025-02-12
+pluginSize=~75 KB
+credits=Developed by Dewa Putu Adikarma Mandala, AI-assisted by ChatGPT (GPT-4o) & Claude (Anthropic).
