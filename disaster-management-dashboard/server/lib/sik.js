@@ -25,7 +25,10 @@ export async function sikLogin(username, password) {
 // the subset of fields used for chat-style reporting (§4.2) - korban/kerugian/impacts
 // come from the detail endpoint and aren't fully specified, so they default to
 // empty/zero until the real payload shape is confirmed against a live account.
-function mapKejadian(raw) {
+// `kabupaten` is NOT read from the raw record: the guide never documents that
+// field's shape, and the API is already queried one kabupaten at a time (see
+// fetchAllEvents below), so the caller passes in the name it already knows.
+function mapKejadian(raw, kabupatenName) {
   return {
     uuid: raw.uuid,
     tanggal: raw.DATE_KEJ || '',
@@ -33,7 +36,7 @@ function mapKejadian(raw) {
     jenisBencana: (raw.jenis_bencana && raw.jenis_bencana.JENIS_KEJ) || '?',
     lokasi: raw.LOKASI_KEJ || '',
     keterangan: raw.KETERANGAN || raw.URAIAN_KEJ || '',
-    kabupaten: (raw.kabupaten && raw.kabupaten.kabupaten) || (raw.kabkota && raw.kabkota.nama) || '',
+    kabupaten: kabupatenName,
     kecamatan: (raw.kecamatan && raw.kecamatan.kecamatan) || '',
     desa: (raw.desa && raw.desa.kelurahan) || '',
     korbanMeninggal: Number(raw.KORBAN_MENINGGAL ?? 0),
@@ -51,9 +54,9 @@ function mapKejadian(raw) {
 }
 
 export async function fetchAllEvents(token) {
-  const kabkotaIds = Object.values(config.kabkotaIds);
+  const kabkotaEntries = Object.entries(config.kabkotaIds);
   const results = await Promise.all(
-    kabkotaIds.map(async (id) => {
+    kabkotaEntries.map(async ([kabupatenName, id]) => {
       const res = await fetch(`${config.sikBaseUrl}/lap-kejadian?kabkota=${id}&per_page=200`, {
         headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
       });
@@ -61,7 +64,10 @@ export async function fetchAllEvents(token) {
       if (!res.ok) throw new Error(`SIK lap-kejadian HTTP ${res.status} (kabkota=${id})`);
       const body = await res.json();
       const items = (body && body.data && body.data.data) || [];
-      return items.map(mapKejadian);
+      if (items[0]) {
+        console.log(`[sik] sample raw record for kabkota=${id} (${kabupatenName}):`, JSON.stringify(items[0], null, 2));
+      }
+      return items.map((raw) => mapKejadian(raw, kabupatenName));
     })
   );
   return results.flat();

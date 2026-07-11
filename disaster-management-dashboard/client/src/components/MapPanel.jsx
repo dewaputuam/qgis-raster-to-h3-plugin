@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import { severityColor, JENIS_COLORS } from '../theme.js';
-import { disasterMarkerSvgHtml, Icon, ExpandIcon } from '../icons.jsx';
+import { disasterMarkerSvgHtml, Icon, ExpandIcon, LegendIcon, DisasterIcon } from '../icons.jsx';
 import MapSidebar from './MapSidebar.jsx';
 import EventDetailCard from './EventDetailCard.jsx';
 
@@ -177,17 +177,30 @@ export default function MapPanel({ open, events, regions, focusUuid, isMobile, o
               aria-label="Legenda jenis bencana"
               style={{ ...cornerFabStyle, bottom: 16, right: 16 }}
             >
-              🎨
+              <LegendIcon />
             </button>
             {legendOpen && (
-              <div style={{ position: 'absolute', bottom: 68, right: 16, zIndex: 1000, width: 220, background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 14, boxShadow: 'var(--card-shadow-hover)', padding: 14 }}>
-                <div style={{ fontSize: 11.5, fontWeight: 700, marginBottom: 10 }}>Legenda Jenis Bencana</div>
-                {Object.entries(JENIS_COLORS).map(([jenis, color]) => (
-                  <div key={jenis} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                    <span style={{ width: 10, height: 10, borderRadius: '50%', background: color, flexShrink: 0 }} />
-                    <span style={{ fontSize: 11.5, color: 'var(--fg2)' }}>{jenis}</span>
-                  </div>
-                ))}
+              <div style={{ position: 'absolute', bottom: 68, right: 16, zIndex: 1000, width: 'min(240px, calc(100% - 32px))', maxHeight: 'min(360px, calc(100% - 100px))', display: 'flex', flexDirection: 'column', background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 14, boxShadow: 'var(--card-shadow-hover)', overflow: 'hidden' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '12px 14px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+                  <span style={{ fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.03em' }}>Legenda</span>
+                  <button
+                    onClick={() => setLegendOpen(false)}
+                    aria-label="Tutup legenda"
+                    style={{ width: 22, height: 22, borderRadius: 7, border: '1px solid var(--border2)', background: 'var(--band)', color: 'var(--fg)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, lineHeight: 1, flexShrink: 0 }}
+                  >
+                    ✕
+                  </button>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '12px 14px', overflowY: 'auto' }}>
+                  {Object.entries(JENIS_COLORS).map(([jenis, color]) => (
+                    <div key={jenis} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <span style={{ width: 20, height: 20, borderRadius: '50%', background: color, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <DisasterIcon jenis={jenis} width={10} height={10} stroke="white" strokeWidth={2.2} />
+                      </span>
+                      <span style={{ fontSize: 11.5, color: 'var(--fg2)' }}>{jenis}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 

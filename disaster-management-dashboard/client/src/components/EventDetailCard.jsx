@@ -86,7 +86,7 @@ export default function EventDetailCard({ event, regions, color, onClose }) {
   return (
     <div
       style={{
-        position: 'absolute', top: 16, right: 16, bottom: 16, width: 'min(320px, calc(100% - 32px))',
+        position: 'absolute', top: 72, right: 16, bottom: 16, width: 'min(320px, calc(100% - 32px))',
         display: 'flex', flexDirection: 'column', background: 'var(--card-bg)', border: '1px solid var(--border)',
         borderRadius: 14, boxShadow: 'var(--card-shadow-hover)', overflow: 'hidden', zIndex: 400,
       }}
