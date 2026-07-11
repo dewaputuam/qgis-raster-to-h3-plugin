@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { STATUS_META } from '../../theme.js';
 import { api } from '../../lib/api.js';
 import { formatClockTime, formatCountdown } from '../../lib/format.js';
+import EventsList from '../EventsList.jsx';
 
 const SOURCE_DEFS = {
   sik: { name: 'API SIK — Kejadian Bencana', desc: 'Data kejadian bencana, perlu login' },
@@ -11,7 +12,7 @@ const SOURCE_DEFS = {
 
 const ALLOWED_INTERVALS = [1, 5, 15, 30, 60];
 
-export default function AdminPanel() {
+export default function AdminPanel({ events, regions, onOpenMap }) {
   const [sikStatus, setSikStatus] = useState({ loggedIn: false, username: null, tokenExpiresAt: null });
   const [sources, setSources] = useState([]);
   const [fetchSettings, setFetchSettings] = useState({ sik: 15, cuaca: 15, gempa: 15 });
@@ -213,6 +214,12 @@ export default function AdminPanel() {
           );
         })}
       </div>
+
+      {sikStatus.loggedIn && (
+        <div style={{ marginTop: 32 }}>
+          <EventsList events={events} regions={regions} onOpenMap={onOpenMap} />
+        </div>
+      )}
     </section>
   );
 }

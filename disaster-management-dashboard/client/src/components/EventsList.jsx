@@ -59,7 +59,7 @@ export default function EventsList({ events, regions, onOpenMap }) {
   }, [filtered]);
 
   return (
-    <section style={{ maxWidth: 1280, margin: '0 auto', padding: '8px 24px 60px' }}>
+    <section>
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16, marginBottom: 18 }}>
         <div>
           <div style={{ fontSize: 13, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.03em', color: 'var(--accent)', marginBottom: 4 }}>

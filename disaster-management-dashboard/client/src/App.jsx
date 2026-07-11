@@ -5,7 +5,6 @@ import { api } from './lib/api.js';
 import QuakeMarquee from './components/QuakeMarquee.jsx';
 import Hero from './components/Hero.jsx';
 import ReportPanel from './components/ReportPanel.jsx';
-import EventsList from './components/EventsList.jsx';
 import MapPanel from './components/MapPanel.jsx';
 import AdminPanel from './components/admin/AdminPanel.jsx';
 
@@ -158,20 +157,19 @@ export default function App() {
               maxWidth: 1160,
               margin: '0 auto',
               padding: isMobile ? '28px 20px' : '40px 32px',
-              display: 'flex',
+              display: 'grid',
+              gridTemplateColumns: isMobile ? '1fr' : '340px 1fr',
               gap: 40,
-              flexWrap: 'wrap',
-              alignItems: 'flex-start',
+              alignItems: 'start',
             }}
           >
             <Hero events={events} weather={weather} onOpenMap={jumpToEventOnMap} isMobile={isMobile} />
             <ReportPanel events={events} isMobile={isMobile} onOpenMap={jumpToEventOnMap} />
           </section>
-          <EventsList events={events} regions={regions} onOpenMap={jumpToEventOnMap} />
         </>
       )}
 
-      {view === 'admin' && <AdminPanel />}
+      {view === 'admin' && <AdminPanel events={events} regions={regions} onOpenMap={jumpToEventOnMap} />}
 
       <MapPanel open={mapPanelOpen} events={events} regions={regions} focusUuid={mapFocusUuid} isMobile={isMobile} onClose={() => setMapPanelOpen(false)} />
     </div>
