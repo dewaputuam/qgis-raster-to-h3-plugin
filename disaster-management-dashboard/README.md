@@ -139,17 +139,23 @@ only fail open for events whose kecamatan field is itself missing or misspelled.
 The map's "kejadian tanpa lokasi valid" panel doesn't just check for missing coordinates —
 it checks whether an event's lat/lng actually falls inside the kabupaten it claims to be in
 (`client/src/lib/kabupatenBounds.js`), catching cases like an event tagged "Karangasem"
-whose coordinates actually point somewhere else. The check now has two tiers:
+whose coordinates actually point somewhere else (a bad map pin, a corrupted coordinate,
+etc). **The per-kabupaten boxes are hand-estimated rectangles, not real administrative
+boundaries** — no official GeoJSON boundary file was available while building this. That
+means: boxes overlap at shared borders, and an event near a kabupaten's edge can be flagged
+even though it's genuinely correct. Swap in a real boundary polygon dataset (e.g. from Badan
+Informasi Geospasial) and switch to point-in-polygon if that level of accuracy matters for
+your use — the check is isolated in one file to make that swap easy.
 
-1. **Exact match** — if the event's `kecamatan` is recognized in the same official
-   Kemendagri kecamatan → kabupaten table used server-side (`client/src/lib/wilayahBali.json`,
-   `isKecamatanInKabupaten`), that's authoritative: no ambiguity, no border cases.
-2. **Bounding-box fallback** — only used when the kecamatan is missing/unrecognized. These
-   boxes are still hand-estimated rectangles, not real administrative boundaries, so they
-   overlap at shared borders and can flag a genuinely correct event near a kabupaten's edge.
-   Swap in a real boundary polygon dataset (e.g. from Badan Informasi Geospasial) and switch
-   to point-in-polygon if you need this fallback tier to be more precise — it's isolated in
-   one file to make that swap easy.
+This is deliberately a coordinate check only, kept separate from the kecamatan/kabupaten
+label cross-check described above. An earlier version of this check tried to reuse the
+kecamatan → kabupaten table as an "exact" tier before falling back to the bounding box, but
+that's the wrong tool for this job: SIK's own kecamatan and kabupaten fields are always
+internally consistent with each other, so that check passed 100% of events regardless of
+whether their lat/lng was actually right — silently emptying this panel. Label correctness
+(is "kabupaten" the right text for this event) and location correctness (does the pin sit
+where that text says it should) are independent checks against independent data (text
+fields vs. coordinates) and need to stay that way.
 
 ### Known gap: SIK event detail schema
 
