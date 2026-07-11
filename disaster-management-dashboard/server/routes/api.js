@@ -4,6 +4,7 @@ import { config } from '../config.js';
 import * as db from '../db.js';
 import { sikLogin, SikAuthError } from '../lib/sik.js';
 import { scheduleSourceFetch, onIntervalChange } from '../lib/scheduler.js';
+import { fetchCuaca } from '../lib/bmkg.js';
 
 export const router = Router();
 
@@ -16,6 +17,24 @@ router.get('/weather', (req, res) => {
   const cached = db.getCachedWeather(adm4) || db.getCachedWeather(config.defaultAdm4);
   if (!cached) return res.json({ data: null });
   res.json({ data: cached });
+});
+
+// On-demand lookup for a specific village (e.g. an event's location on the map),
+// distinct from the scheduled default-location cache above. Fetches live and
+// caches the result so repeat lookups for the same village are fast.
+router.get('/weather/lookup', async (req, res) => {
+  const adm4 = req.query.adm4;
+  if (!adm4) return res.status(400).json({ error: 'adm4 is required' });
+  const cached = db.getCachedWeather(adm4);
+  if (cached && Date.now() - cached.fetchedAt < 15 * 60000) return res.json({ data: cached });
+  try {
+    const { lokasi, cuaca } = await fetchCuaca(adm4);
+    db.cacheWeather(adm4, lokasi, cuaca);
+    res.json({ data: { adm4, lokasi, cuaca, fetchedAt: Date.now() } });
+  } catch (err) {
+    if (cached) return res.json({ data: cached });
+    res.status(502).json({ error: err.message || String(err) });
+  }
 });
 
 router.get('/events', (req, res) => {

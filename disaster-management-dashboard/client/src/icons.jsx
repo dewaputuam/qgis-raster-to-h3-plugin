@@ -52,6 +52,39 @@ export function Icon({ name, ...rest }) {
   }
 }
 
+export function ExpandIcon({ expanded, ...rest }) {
+  const props = { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round', ...rest };
+  return (
+    <svg {...props}>
+      {expanded ? (
+        <>
+          <path d="M4 9h5V4" />
+          <path d="M20 9h-5V4" />
+          <path d="M4 15h5v5" />
+          <path d="M20 15h-5v5" />
+        </>
+      ) : (
+        <>
+          <path d="M9 3H4v5" />
+          <path d="M15 3h5v5" />
+          <path d="M9 21H4v-5" />
+          <path d="M15 21h5v-5" />
+        </>
+      )}
+    </svg>
+  );
+}
+
+export function InfoIcon(props) {
+  return (
+    <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 11v5.5" />
+      <circle cx="12" cy="7.8" r="0.6" fill="currentColor" />
+    </svg>
+  );
+}
+
 export function ChevronIcon({ pointRight }) {
   return (
     <svg

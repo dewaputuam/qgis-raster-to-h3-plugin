@@ -16,7 +16,7 @@ export default function QuakeMarquee({ quakes }) {
             borderRadius: '50%',
             background: 'oklch(55% 0.18 25)',
             display: 'inline-block',
-            animation: 'markerBounce 2s ease-in-out infinite',
+            animation: 'iconBlink 2.4s ease-in-out infinite',
           }}
         />
         <span style={{ fontSize: 12.5, fontWeight: 800 }}>Gempa Terkini</span>
@@ -36,7 +36,7 @@ export default function QuakeMarquee({ quakes }) {
             cursor: 'pointer',
           }}
         >
-          📍 {nearOnly ? 'Semua Gempa' : 'Filter dekat Bali'}
+          {nearOnly ? '⚠ Dekat Bali saja' : '📍 Filter dekat Bali'}
         </button>
       </div>
 

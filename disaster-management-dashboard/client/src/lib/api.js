@@ -11,6 +11,7 @@ async function req(path, options) {
 export const api = {
   getQuakes: () => req('/quakes'),
   getWeather: (adm4) => req(`/weather?adm4=${encodeURIComponent(adm4)}`),
+  lookupWeather: (adm4) => req(`/weather/lookup?adm4=${encodeURIComponent(adm4)}`),
   getEvents: (params = {}) => {
     const qs = new URLSearchParams(params).toString();
     return req(`/events${qs ? `?${qs}` : ''}`);

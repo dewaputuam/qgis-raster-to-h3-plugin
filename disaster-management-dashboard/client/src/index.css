@@ -18,6 +18,10 @@ a { text-decoration: none; color: inherit; }
   from { transform: translateX(0); }
   to { transform: translateX(-50%); }
 }
+@keyframes iconBlink {
+  0%, 92%, 100% { transform: scaleY(1); }
+  96% { transform: scaleY(0.12); }
+}
 
 button { font: inherit; }
 select, input { font: inherit; }

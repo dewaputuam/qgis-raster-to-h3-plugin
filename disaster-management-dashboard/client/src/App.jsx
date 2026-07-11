@@ -173,7 +173,7 @@ export default function App() {
 
       {view === 'admin' && <AdminPanel />}
 
-      <MapPanel open={mapPanelOpen} events={events} focusUuid={mapFocusUuid} isMobile={isMobile} onClose={() => setMapPanelOpen(false)} />
+      <MapPanel open={mapPanelOpen} events={events} regions={regions} focusUuid={mapFocusUuid} isMobile={isMobile} onClose={() => setMapPanelOpen(false)} />
     </div>
   );
 }

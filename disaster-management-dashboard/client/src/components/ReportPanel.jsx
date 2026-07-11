@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { severityColor } from '../theme.js';
 import { DisasterIcon } from '../icons.jsx';
 import { formatRupiah, formatRupiahShort } from '../lib/format.js';
@@ -35,6 +36,7 @@ function StatGroup({ title, items }) {
 }
 
 export default function ReportPanel({ events, isMobile, onOpenMap }) {
+  const [marqueeHover, setMarqueeHover] = useState(false);
   const total = events.length;
   const titikDampak = events.reduce((s, e) => s + (e.impacts || []).length, 0);
   const meninggal = events.reduce((s, e) => s + (e.korbanMeninggal || 0), 0);
@@ -70,8 +72,14 @@ export default function ReportPanel({ events, isMobile, onOpenMap }) {
       </div>
 
       {marqueeCards.length > 0 && (
-        <div style={{ marginTop: 24, overflow: 'hidden' }}>
-          <div style={{ display: 'flex', gap: 12, width: 'max-content', animation: `quakeMarquee ${Math.max(30, events.length * 5)}s linear infinite` }}>
+        <div style={{ marginTop: 24, overflow: 'hidden' }} onMouseEnter={() => setMarqueeHover(true)} onMouseLeave={() => setMarqueeHover(false)}>
+          <div
+            style={{
+              display: 'flex', gap: 12, width: 'max-content',
+              animation: `quakeMarquee ${Math.max(90, events.length * 3.5)}s linear infinite`,
+              animationPlayState: marqueeHover ? 'paused' : 'running',
+            }}
+          >
             {marqueeCards.map((ev, i) => {
               const color = severityColor(ev.jenisBencana);
               const totalKerugian = (ev.impacts || []).reduce((s, im) => s + (im.totalKerugian || 0), 0) || ev.kerugian || 0;

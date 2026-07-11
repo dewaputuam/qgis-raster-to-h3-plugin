@@ -30,12 +30,16 @@ function Chip({ children }) {
 export default function Hero({ events, weather, onOpenMap, isMobile }) {
   const recent = [...events].sort((a, b) => `${b.tanggal} ${b.jam}`.localeCompare(`${a.tanggal} ${a.jam}`)).slice(0, 3);
   const [index, setIndex] = useState(0);
+  const [hover, setHover] = useState(false);
 
   useEffect(() => {
     if (recent.length < 2) return;
-    const t = setInterval(() => setIndex((i) => (i + 1) % recent.length), 5000);
+    const t = setInterval(() => {
+      if (hover) return;
+      setIndex((i) => (i + 1) % recent.length);
+    }, 5000);
     return () => clearInterval(t);
-  }, [recent.length]);
+  }, [recent.length, hover]);
 
   if (!recent.length) {
     return (
@@ -61,16 +65,39 @@ export default function Hero({ events, weather, onOpenMap, isMobile }) {
       <div style={{ fontSize: 13, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.03em', color: 'var(--accent)', marginBottom: 12 }}>
         Tiga Kejadian Terbaru
       </div>
+      <div style={{ position: 'relative' }} onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
+        {[2, 1].map((role) => {
+          if (role >= recent.length) return null;
+          const spread = hover ? [0, 14, 28][role] : 0;
+          const rot = hover ? [0, 5, 9][role] : 0;
+          const scale = 1 - role * 0.04;
+          return (
+            <div
+              key={role}
+              aria-hidden="true"
+              style={{
+                position: 'absolute', inset: 0, borderRadius: 16, background: 'var(--card-bg)',
+                border: '1px solid var(--border)', boxShadow: 'var(--card-shadow)',
+                transform: `translateX(${role * 12 + spread}px) rotate(${rot}deg) scale(${scale})`,
+                transition: 'transform .35s cubic-bezier(.22,.8,.25,1)', zIndex: 3 - role, pointerEvents: 'none',
+              }}
+            />
+          );
+        })}
       <div
         style={{
+          position: 'relative',
+          zIndex: 3,
           background: 'var(--card-bg)',
           border: '1px solid var(--border)',
           borderRadius: 16,
           padding: 18,
-          boxShadow: 'var(--glow-ring), var(--card-shadow)',
+          boxShadow: hover ? 'var(--glow-ring), var(--card-shadow-hover)' : 'var(--glow-ring), var(--card-shadow)',
           cursor: 'pointer',
+          transform: hover ? 'translateY(-10px)' : 'none',
+          transition: 'transform .35s cubic-bezier(.22,.8,.25,1), box-shadow .25s',
         }}
-        onClick={() => onOpenMap(ev.uuid)}
+        onClick={() => setIndex((i) => (i + 1) % recent.length)}
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -139,6 +166,7 @@ export default function Hero({ events, weather, onOpenMap, isMobile }) {
         >
           📍 Lihat di Peta
         </button>
+      </div>
       </div>
 
       {recent.length > 1 && (

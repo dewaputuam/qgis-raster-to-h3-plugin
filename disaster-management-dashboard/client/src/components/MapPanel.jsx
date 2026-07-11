@@ -1,18 +1,39 @@
 import { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import { severityColor, JENIS_COLORS } from '../theme.js';
-import { disasterMarkerSvgHtml, Icon, ChevronIcon } from '../icons.jsx';
+import { disasterMarkerSvgHtml, Icon, ExpandIcon } from '../icons.jsx';
+import MapSidebar from './MapSidebar.jsx';
+import EventDetailCard from './EventDetailCard.jsx';
 
 const BALI_CENTER = [-8.4, 115.15];
 
-export default function MapPanel({ open, events, focusUuid, isMobile, onClose }) {
+function isWithinBaliBounds(lat, lng) {
+  return Number.isFinite(lat) && Number.isFinite(lng) && lat <= -7.8 && lat >= -9.0 && lng >= 114.0 && lng <= 116.0;
+}
+
+export default function MapPanel({ open, events, regions, focusUuid, isMobile, onClose }) {
+  const panelRef = useRef(null);
   const elRef = useRef(null);
   const mapRef = useRef(null);
   const markersRef = useRef({});
   const initedRef = useRef(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [legendOpen, setLegendOpen] = useState(false);
+  const [invalidOpen, setInvalidOpen] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
   const [selectedUuid, setSelectedUuid] = useState(null);
+  const [filters, setFilters] = useState({ jenis: '', kabupaten: '', start: '', end: '' });
+
+  const filteredEvents = events.filter((ev) => {
+    if (filters.jenis && ev.jenisBencana !== filters.jenis) return false;
+    if (filters.kabupaten && ev.kabupaten !== filters.kabupaten) return false;
+    if (filters.start && ev.tanggal < filters.start) return false;
+    if (filters.end && ev.tanggal > filters.end) return false;
+    return true;
+  });
+  const invalidEvents = filteredEvents.filter((ev) => !isWithinBaliBounds(ev.lat, ev.lng));
+  const mappable = filteredEvents.filter((ev) => isWithinBaliBounds(ev.lat, ev.lng));
+  const selectedEvent = events.find((e) => e.uuid === selectedUuid) || null;
 
   useEffect(() => {
     if (!open || initedRef.current) return;
@@ -33,7 +54,7 @@ export default function MapPanel({ open, events, focusUuid, isMobile, onClose })
 
   useEffect(() => {
     if (open && mapRef.current) setTimeout(() => mapRef.current.invalidateSize(), 60);
-  }, [open, sidebarCollapsed]);
+  }, [open, sidebarCollapsed, fullscreen]);
 
   useEffect(() => {
     const onEsc = (e) => { if (e.key === 'Escape' && open) onClose(); };
@@ -49,13 +70,12 @@ export default function MapPanel({ open, events, focusUuid, isMobile, onClose })
 
     let latestUuid = null;
     let latestKey = '';
-    events.forEach((ev) => {
+    mappable.forEach((ev) => {
       const key = `${ev.tanggal || ''} ${ev.jam || ''}`;
       if (key > latestKey) { latestKey = key; latestUuid = ev.uuid; }
     });
 
-    events.forEach((ev) => {
-      if (!Number.isFinite(ev.lat) || !Number.isFinite(ev.lng)) return;
+    mappable.forEach((ev) => {
       const color = severityColor(ev.jenisBencana);
       const highlight = ev.uuid === latestUuid || ev.uuid === selectedUuid;
       const icon = L.divIcon({
@@ -65,7 +85,6 @@ export default function MapPanel({ open, events, focusUuid, isMobile, onClose })
         iconAnchor: highlight ? [21, 21] : [15, 15],
       });
       const marker = L.marker([ev.lat, ev.lng], { icon, zIndexOffset: highlight ? 1000 : 0 }).addTo(map);
-      marker.bindPopup(popupHtml(ev));
       marker.on('click', () => selectEvent(ev.uuid));
       markersRef.current[ev.uuid] = marker;
     });
@@ -74,7 +93,7 @@ export default function MapPanel({ open, events, focusUuid, isMobile, onClose })
   useEffect(() => {
     if (mapRef.current) renderMarkers();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [events, selectedUuid]);
+  }, [events, selectedUuid, filters]);
 
   function selectEvent(uuid) {
     setSelectedUuid(uuid);
@@ -83,7 +102,6 @@ export default function MapPanel({ open, events, focusUuid, isMobile, onClose })
     const marker = markersRef.current[uuid];
     if (map && ev && marker && Number.isFinite(ev.lat)) {
       map.setView([ev.lat, ev.lng], 13, { animate: true });
-      setTimeout(() => marker.openPopup(), 300);
     }
   }
 
@@ -92,7 +110,14 @@ export default function MapPanel({ open, events, focusUuid, isMobile, onClose })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusUuid, open]);
 
-  const sorted = [...events].sort((a, b) => `${b.tanggal} ${b.jam}`.localeCompare(`${a.tanggal} ${a.jam}`));
+  function toggleFullscreen() {
+    if (!panelRef.current) return;
+    if (!document.fullscreenElement) {
+      panelRef.current.requestFullscreen?.().then(() => setFullscreen(true)).catch(() => {});
+    } else {
+      document.exitFullscreen?.().then(() => setFullscreen(false)).catch(() => {});
+    }
+  }
 
   return (
     <>
@@ -104,6 +129,7 @@ export default function MapPanel({ open, events, focusUuid, isMobile, onClose })
         }}
       />
       <div
+        ref={panelRef}
         style={{
           position: 'fixed', top: 0, right: 0, height: '100vh', width: '100vw', zIndex: 200,
           background: 'var(--bg)', boxShadow: '-8px 0 32px rgba(0,0,0,0.22)',
@@ -111,65 +137,29 @@ export default function MapPanel({ open, events, focusUuid, isMobile, onClose })
         }}
       >
         <div style={{ position: 'fixed', top: 16, right: 16, zIndex: 999, display: 'flex', gap: 8 }}>
+          <button onClick={toggleFullscreen} aria-label="Layar penuh" style={fabStyle}>
+            <ExpandIcon expanded={fullscreen} />
+          </button>
           <button onClick={onClose} aria-label="Tutup peta" style={fabStyle}>✕</button>
         </div>
 
         <div style={{ display: 'flex', height: '100%' }}>
-          <div
-            style={{
-              width: isMobile ? '100%' : sidebarCollapsed ? 60 : 260,
-              flexShrink: 0,
-              padding: isMobile ? 20 : sidebarCollapsed ? '20px 12px' : 24,
-              background: 'var(--card-bg)',
-              display: isMobile && sidebarCollapsed ? 'none' : 'flex',
-              flexDirection: 'column',
-              borderRight: isMobile ? 'none' : '1px solid var(--border)',
-              borderBottom: isMobile ? '1px solid var(--border)' : 'none',
-              transition: 'width .35s cubic-bezier(.22,.8,.25,1), padding .35s ease',
-              overflow: 'hidden',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-              {!sidebarCollapsed && (
-                <span style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--accent)', background: 'var(--accent-08)', borderRadius: 999, padding: '4px 10px', letterSpacing: '0.03em' }}>
-                  KEJADIAN
-                </span>
-              )}
-              {!isMobile && (
-                <button onClick={() => setSidebarCollapsed((v) => !v)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)', padding: 4 }}>
-                  <ChevronIcon pointRight={sidebarCollapsed} />
-                </button>
-              )}
-            </div>
-            {!sidebarCollapsed && (
-              <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {sorted.map((ev) => {
-                  const color = severityColor(ev.jenisBencana);
-                  const active = ev.uuid === selectedUuid;
-                  return (
-                    <button
-                      key={ev.uuid}
-                      onClick={() => selectEvent(ev.uuid)}
-                      style={{
-                        textAlign: 'left', display: 'flex', gap: 8, alignItems: 'flex-start',
-                        background: active ? 'var(--accent-08)' : 'transparent', border: 'none',
-                        borderRadius: 10, padding: '8px 10px', cursor: 'pointer', fontFamily: 'inherit',
-                      }}
-                    >
-                      <span style={{ width: 8, height: 8, borderRadius: '50%', background: color, marginTop: 5, flexShrink: 0 }} />
-                      <span style={{ minWidth: 0 }}>
-                        <div style={{ fontSize: 11.5, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{ev.jenisBencana}</div>
-                        <div style={{ fontSize: 10, color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{ev.tanggal} · {ev.kabupaten}</div>
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+          <MapSidebar
+            collapsed={sidebarCollapsed}
+            onToggleCollapse={() => setSidebarCollapsed((v) => !v)}
+            isMobile={isMobile}
+            events={events}
+            filteredEvents={filteredEvents}
+            regions={regions}
+            filters={filters}
+            onFilterChange={(patch) => setFilters((f) => ({ ...f, ...patch }))}
+            selectedUuid={selectedUuid}
+            onSelectEvent={selectEvent}
+          />
 
           <div style={{ position: 'relative', flex: 1 }}>
             <div ref={elRef} style={{ position: 'absolute', inset: 0 }} />
+
             <button
               onClick={() => mapRef.current && mapRef.current.setView(BALI_CENTER, 9, { animate: true })}
               style={{
@@ -185,7 +175,7 @@ export default function MapPanel({ open, events, focusUuid, isMobile, onClose })
             <button
               onClick={() => setLegendOpen((v) => !v)}
               aria-label="Legenda jenis bencana"
-              style={{ position: 'absolute', bottom: 16, right: 16, zIndex: 1000, width: 44, height: 44, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--card-bg)', color: 'var(--fg)', border: '1px solid var(--border2)', cursor: 'pointer', boxShadow: 'var(--card-shadow-hover)' }}
+              style={{ ...cornerFabStyle, bottom: 16, right: 16 }}
             >
               🎨
             </button>
@@ -200,6 +190,45 @@ export default function MapPanel({ open, events, focusUuid, isMobile, onClose })
                 ))}
               </div>
             )}
+
+            <div style={{ position: 'absolute', bottom: 16, left: 16, zIndex: 1000 }}>
+              <button
+                onClick={() => setInvalidOpen((v) => !v)}
+                aria-label="Kejadian tanpa koordinat valid"
+                style={{ ...cornerFabStyle, position: 'relative' }}
+              >
+                <Icon name="alert" width={18} height={18} stroke="oklch(58% 0.18 30)" />
+                {invalidEvents.length > 0 && (
+                  <span style={{ position: 'absolute', top: -6, right: -6, minWidth: 18, height: 18, borderRadius: 999, background: 'oklch(58% 0.18 30)', color: 'white', fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px' }}>
+                    {invalidEvents.length}
+                  </span>
+                )}
+              </button>
+            </div>
+            {invalidOpen && invalidEvents.length > 0 && (
+              <div style={{ position: 'absolute', bottom: 68, left: 16, zIndex: 1000, width: 'min(320px, calc(100% - 32px))', maxHeight: 'min(360px, calc(100% - 100px))', display: 'flex', flexDirection: 'column', background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 14, boxShadow: 'var(--card-shadow-hover)', overflow: 'hidden' }}>
+                <div style={{ padding: 14, borderBottom: '1px solid var(--border)', fontSize: 12.5, fontWeight: 700 }}>
+                  Kejadian tanpa lokasi valid ({invalidEvents.length})
+                </div>
+                <div style={{ overflowY: 'auto', padding: 8 }}>
+                  {invalidEvents.map((ev) => (
+                    <div key={ev.uuid} style={{ padding: '8px 10px', fontSize: 11.5 }}>
+                      <div style={{ fontWeight: 700 }}>{ev.jenisBencana}</div>
+                      <div style={{ color: 'var(--muted)' }}>{ev.tanggal} &middot; {ev.kecamatan}, {ev.kabupaten}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {selectedEvent && (
+              <EventDetailCard
+                event={selectedEvent}
+                regions={regions}
+                color={severityColor(selectedEvent.jenisBencana)}
+                onClose={() => setSelectedUuid(null)}
+              />
+            )}
           </div>
         </div>
       </div>
@@ -213,11 +242,8 @@ const fabStyle = {
   boxShadow: 'var(--card-shadow-hover)', fontSize: 15,
 };
 
-function popupHtml(ev) {
-  return `<div style="font-family:Inter,sans-serif;font-size:12.5px;max-width:220px;line-height:1.5;">
-    <div style="font-weight:700;font-size:13px;margin-bottom:4px;">${ev.jenisBencana}</div>
-    <div style="color:#555;margin-bottom:6px;">${ev.tanggal} &middot; ${ev.jam} WITA</div>
-    <div style="margin-bottom:6px;">${ev.kecamatan}, ${ev.desa}, ${ev.kabupaten}</div>
-    <div style="color:#555;">Meninggal: ${ev.korbanMeninggal} &middot; Luka: ${ev.korbanLuka} &middot; Dampak: ${(ev.impacts || []).length}</div>
-  </div>`;
-}
+const cornerFabStyle = {
+  position: 'absolute', zIndex: 1000, width: 44, height: 44, borderRadius: 12, display: 'flex', alignItems: 'center',
+  justifyContent: 'center', background: 'var(--card-bg)', color: 'var(--fg)', border: '1px solid var(--border2)',
+  cursor: 'pointer', boxShadow: 'var(--card-shadow-hover)',
+};
