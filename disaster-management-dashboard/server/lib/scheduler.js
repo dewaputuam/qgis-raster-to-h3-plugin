@@ -25,7 +25,7 @@ async function runFetch(key) {
     let count = 0;
     if (key === 'sik') {
       const admin = db.getAdminConfig();
-      const events = await fetchAllEvents(admin.token);
+      const events = await fetchAllEvents(admin.token, { getPreviousImpacts: db.getEventImpacts });
       for (const ev of events) db.upsertEvent(ev);
       count = events.length;
     } else if (key === 'cuaca') {

@@ -4,6 +4,7 @@ import { QuakeIcon } from '../icons.jsx';
 export default function QuakeMarquee({ quakes }) {
   const [nearOnly, setNearOnly] = useState(false);
   const [hover, setHover] = useState(false);
+  const [selectedQuake, setSelectedQuake] = useState(null);
   const list = nearOnly ? quakes.filter((q) => q.isNearBali) : quakes;
 
   return (
@@ -59,6 +60,7 @@ export default function QuakeMarquee({ quakes }) {
             {[...list, ...list].map((q, i) => (
               <div
                 key={i}
+                onClick={() => setSelectedQuake(q)}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -69,6 +71,7 @@ export default function QuakeMarquee({ quakes }) {
                   padding: '8px 14px',
                   minWidth: 300,
                   flexShrink: 0,
+                  cursor: 'pointer',
                 }}
               >
                 <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--accent-strong)', minWidth: 34 }}>{q.Magnitude}</div>
@@ -101,6 +104,53 @@ export default function QuakeMarquee({ quakes }) {
           </div>
         </div>
       )}
+
+      {selectedQuake && (
+        <div
+          onClick={() => setSelectedQuake(null)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{ width: '100%', maxWidth: 380, background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 16, boxShadow: 'var(--card-shadow-hover)', padding: 20, position: 'relative' }}
+          >
+            <button
+              onClick={() => setSelectedQuake(null)}
+              aria-label="Tutup"
+              style={{ position: 'absolute', top: 14, right: 14, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)', fontSize: 18, lineHeight: 1 }}
+            >
+              ✕
+            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18 }}>
+              <div style={{ width: 48, height: 48, borderRadius: 12, background: 'var(--accent-08)', color: 'var(--accent-strong)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, fontWeight: 800, flexShrink: 0 }}>
+                {selectedQuake.Magnitude}
+              </div>
+              <div>
+                <div style={{ fontSize: 15, fontWeight: 800 }}>Magnitudo {selectedQuake.Magnitude}</div>
+                <div style={{ fontSize: 12, color: 'var(--muted)' }}>{selectedQuake.Tanggal} &middot; {selectedQuake.Jam}</div>
+              </div>
+            </div>
+            <ModalRow label="Wilayah" value={selectedQuake.Wilayah} />
+            <ModalRow label="Koordinat" value={`${selectedQuake.Lintang || ''}, ${selectedQuake.Bujur || ''}`} />
+            <ModalRow label="Kedalaman" value={selectedQuake.Kedalaman} />
+            <ModalRow
+              label="Potensi Tsunami"
+              value={selectedQuake.Potensi}
+              valueColor={/berpotensi tsunami/i.test(selectedQuake.Potensi || '') && !/tidak/i.test(selectedQuake.Potensi || '') ? 'oklch(58% 0.18 30)' : 'var(--fg2)'}
+              last
+            />
+          </div>
+        </div>
+      )}
     </section>
+  );
+}
+
+function ModalRow({ label, value, valueColor, last }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '10px 0', borderBottom: last ? 'none' : '1px solid var(--border)' }}>
+      <span style={{ fontSize: 12, color: 'var(--muted)' }}>{label}</span>
+      <span style={{ fontSize: 12.5, fontWeight: 700, color: valueColor || 'var(--fg)', textAlign: 'right' }}>{value}</span>
+    </div>
   );
 }

@@ -4,6 +4,7 @@ import { severityColor, JENIS_COLORS } from '../theme.js';
 import { disasterMarkerSvgHtml, Icon, ExpandIcon, LegendIcon, DisasterIcon } from '../icons.jsx';
 import MapSidebar from './MapSidebar.jsx';
 import EventDetailCard from './EventDetailCard.jsx';
+import EventMarquee from './EventMarquee.jsx';
 
 const BALI_CENTER = [-8.4, 115.15];
 
@@ -143,7 +144,8 @@ export default function MapPanel({ open, events, regions, focusUuid, isMobile, o
           <button onClick={onClose} aria-label="Tutup peta" style={fabStyle}>✕</button>
         </div>
 
-        <div style={{ display: 'flex', height: '100%' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+        <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
           <MapSidebar
             collapsed={sidebarCollapsed}
             onToggleCollapse={() => setSidebarCollapsed((v) => !v)}
@@ -243,6 +245,13 @@ export default function MapPanel({ open, events, regions, focusUuid, isMobile, o
               />
             )}
           </div>
+        </div>
+
+        <EventMarquee
+          events={filteredEvents}
+          onOpenMap={selectEvent}
+          style={{ flexShrink: 0, padding: isMobile ? '16px 20px' : '16px 24px', borderTop: '1px solid var(--border)' }}
+        />
         </div>
       </div>
     </>

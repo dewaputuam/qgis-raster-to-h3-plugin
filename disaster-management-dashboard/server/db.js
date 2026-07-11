@@ -161,6 +161,12 @@ function rowToEvent(row) {
   };
 }
 
+export function getEventImpacts(uuid) {
+  const row = db.prepare('SELECT impacts_json FROM events WHERE uuid = ?').get(uuid);
+  if (!row) return [];
+  return JSON.parse(row.impacts_json || '[]');
+}
+
 export function getEvents({ start, end } = {}) {
   let rows = db.prepare('SELECT * FROM events').all();
   if (start) rows = rows.filter((r) => r.tanggal >= start);

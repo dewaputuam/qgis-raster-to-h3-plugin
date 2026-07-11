@@ -53,7 +53,64 @@ function mapKejadian(raw, kabupatenName) {
   };
 }
 
-export async function fetchAllEvents(token) {
+// The impact/dampak record's own field names aren't documented either - the
+// guide only says the detail endpoint (§4.3) "berisi area terdampak, data
+// korban, kerusakan, dan riwayat penanganan". Each impact record carries the
+// parent kejadian's `uuid` (a plain back-reference, not something we need to
+// join on ourselves since we already fetch one specific event's detail at a
+// time) - kept here so it round-trips if the UI ever needs it directly.
+function mapImpact(raw) {
+  return {
+    idDetail: raw.idDetail ?? raw.ID_DETAIL ?? raw.id ?? null,
+    kejadianUuid: raw.uuid ?? null,
+    tglLaporan: raw.tglLaporan ?? raw.TGL_LAPOR ?? raw.tgl_lapor ?? '',
+    progress: Number(raw.progress ?? raw.PROGRESS ?? 0),
+    mengungsiL: Number(raw.mengungsiL ?? raw.MENGUNGSI_L ?? 0),
+    mengungsiP: Number(raw.mengungsiP ?? raw.MENGUNGSI_P ?? 0),
+    totalKerugian: Number(raw.totalKerugian ?? raw.TOTAL_KERUGIAN ?? 0),
+    totalKorban: Number(raw.totalKorban ?? raw.TOTAL_KORBAN ?? 0),
+    totalKerusakan: Number(raw.totalKerusakan ?? raw.TOTAL_KERUSAKAN ?? 0),
+    korbanMeninggal: Number(raw.korbanMeninggal ?? raw.KORBAN_MENINGGAL ?? 0),
+    korbanLukaBerat: Number(raw.korbanLukaBerat ?? raw.KORBAN_LUKA_BERAT ?? 0),
+    korbanLukaRingan: Number(raw.korbanLukaRingan ?? raw.KORBAN_LUKA_RINGAN ?? 0),
+    korbanHilang: Number(raw.korbanHilang ?? raw.KORBAN_HILANG ?? 0),
+    sumberInfo: raw.sumberInfo ?? raw.SUMBER_INFO ?? '',
+    contactPerson: raw.contactPerson ?? raw.CONTACT_PERSON ?? '',
+    nomorHp: raw.nomorHp ?? raw.NOMOR_HP ?? '',
+    penangananTim: raw.penangananTim ?? raw.PENANGANAN_TIM ?? '',
+    penangananTindakan: raw.penangananTindakan ?? raw.PENANGANAN_TINDAKAN ?? '',
+  };
+}
+
+async function fetchEventImpacts(token, uuid, { logSample } = {}) {
+  const res = await fetch(`${config.sikBaseUrl}/lap-kejadian/${uuid}`, {
+    headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
+  });
+  if (res.status === 401) throw new SikAuthError('Token SIK kedaluwarsa atau tidak valid.');
+  if (!res.ok) throw new Error(`SIK lap-kejadian detail HTTP ${res.status} (uuid=${uuid})`);
+  const body = await res.json();
+  const data = body && body.data;
+  if (logSample) console.log(`[sik] sample raw detail for uuid=${uuid}:`, JSON.stringify(data, null, 2));
+  const rawImpacts = (data && (data.impacts || data.dampak || data.detail_dampak || (Array.isArray(data) ? data : null))) || [];
+  return rawImpacts.map(mapImpact);
+}
+
+// Simple concurrency-limited map so we don't fire off one request per event
+// all at once against a small government API.
+async function mapWithConcurrency(items, limit, fn) {
+  const results = new Array(items.length);
+  let next = 0;
+  async function worker() {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await fn(items[i], i);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
+
+export async function fetchAllEvents(token, { getPreviousImpacts } = {}) {
   const kabkotaEntries = Object.entries(config.kabkotaIds);
   const results = await Promise.all(
     kabkotaEntries.map(async ([kabupatenName, id]) => {
@@ -64,11 +121,23 @@ export async function fetchAllEvents(token) {
       if (!res.ok) throw new Error(`SIK lap-kejadian HTTP ${res.status} (kabkota=${id})`);
       const body = await res.json();
       const items = (body && body.data && body.data.data) || [];
-      if (items[0]) {
-        console.log(`[sik] sample raw record for kabkota=${id} (${kabupatenName}):`, JSON.stringify(items[0], null, 2));
-      }
       return items.map((raw) => mapKejadian(raw, kabupatenName));
     })
   );
-  return results.flat();
+  const events = results.flat();
+
+  let loggedSample = false;
+  await mapWithConcurrency(events, 8, async (ev) => {
+    try {
+      ev.impacts = await fetchEventImpacts(token, ev.uuid, { logSample: !loggedSample });
+      loggedSample = true;
+    } catch (err) {
+      if (err instanceof SikAuthError) throw err;
+      // A single event's detail failing shouldn't wipe out previously-synced
+      // impact data for it, and shouldn't drop the whole sync either.
+      ev.impacts = getPreviousImpacts ? getPreviousImpacts(ev.uuid) : [];
+    }
+  });
+
+  return events;
 }
