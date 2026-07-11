@@ -4,6 +4,7 @@ import { Icon } from './icons.jsx';
 import { api } from './lib/api.js';
 import QuakeMarquee from './components/QuakeMarquee.jsx';
 import Hero from './components/Hero.jsx';
+import ReportPanel from './components/ReportPanel.jsx';
 import EventsList from './components/EventsList.jsx';
 import MapPanel from './components/MapPanel.jsx';
 import AdminPanel from './components/admin/AdminPanel.jsx';
@@ -19,6 +20,14 @@ export default function App() {
   const [quakes, setQuakes] = useState([]);
   const [weather, setWeather] = useState(null);
   const [mapFocusUuid, setMapFocusUuid] = useState(null);
+  const [width, setWidth] = useState(() => window.innerWidth);
+  const isMobile = width < 760;
+
+  useEffect(() => {
+    const onResize = () => setWidth(window.innerWidth);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
   const refreshEvents = useCallback(() => {
     api.getEvents().then((r) => setEvents(r.data)).catch(() => {});
@@ -107,8 +116,8 @@ export default function App() {
                 <circle cx="12" cy="17" r="0.6" fill="var(--accent-strong)" />
               </svg>
             </div>
-            <span style={{ fontWeight: 800, fontSize: 16, letterSpacing: '-0.01em' }}>
-              DASHBOARD MONITORING &mdash; SISTEM INFORMASI KEBENCANAAN
+            <span style={{ fontWeight: 800, fontSize: 15, letterSpacing: '-0.01em', lineHeight: 1.25, maxWidth: 260 }}>
+              DASHBOARD MONITORING - SISTEM INFORMASI KEBENCANAAN
             </span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -123,20 +132,19 @@ export default function App() {
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: 6,
+                justifyContent: 'center',
+                width: 38,
+                height: 38,
+                flexShrink: 0,
                 fontFamily: 'inherit',
-                fontSize: 12.5,
-                fontWeight: 700,
                 color: 'var(--fg2)',
                 background: 'var(--band)',
                 border: '1px solid var(--border)',
-                borderRadius: 999,
-                padding: '7px 12px',
+                borderRadius: '50%',
                 cursor: 'pointer',
               }}
             >
-              <Icon name={darkMode ? 'sun' : 'moon'} width={15} height={15} />
-              <span>{darkMode ? 'Terang' : 'Gelap'}</span>
+              <Icon name={darkMode ? 'sun' : 'moon'} width={16} height={16} />
             </button>
           </div>
         </div>
@@ -145,16 +153,27 @@ export default function App() {
       {view === 'public' && (
         <>
           <QuakeMarquee quakes={quakes} />
-          <Hero events={events} weather={weather} onOpenMap={jumpToEventOnMap} />
+          <section
+            style={{
+              maxWidth: 1160,
+              margin: '0 auto',
+              padding: isMobile ? '28px 20px' : '40px 32px',
+              display: 'flex',
+              gap: 40,
+              flexWrap: 'wrap',
+              alignItems: 'flex-start',
+            }}
+          >
+            <Hero events={events} weather={weather} onOpenMap={jumpToEventOnMap} isMobile={isMobile} />
+            <ReportPanel events={events} isMobile={isMobile} onOpenMap={jumpToEventOnMap} />
+          </section>
           <EventsList events={events} regions={regions} onOpenMap={jumpToEventOnMap} />
         </>
       )}
 
       {view === 'admin' && <AdminPanel />}
 
-      {mapPanelOpen && (
-        <MapPanel events={events} focusUuid={mapFocusUuid} onClose={() => setMapPanelOpen(false)} />
-      )}
+      <MapPanel open={mapPanelOpen} events={events} focusUuid={mapFocusUuid} isMobile={isMobile} onClose={() => setMapPanelOpen(false)} />
     </div>
   );
 }

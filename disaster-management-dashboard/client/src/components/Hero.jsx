@@ -1,100 +1,166 @@
+import { useEffect, useState } from 'react';
 import { severityColor } from '../theme.js';
 import { DisasterIcon } from '../icons.jsx';
+import { formatRupiah } from '../lib/format.js';
 
-function WeatherBadge({ weather }) {
-  if (!weather || !weather.cuaca || !weather.cuaca.length) {
-    return <span style={{ fontSize: 12, color: 'var(--muted)' }}>Cuaca tidak tersedia</span>;
-  }
-  const now = weather.cuaca[0];
-  const lokasiLabel = weather.lokasi ? `${weather.lokasi.desa}, ${weather.lokasi.kecamatan}` : 'Lokasi default';
+function ForecastRow({ weather }) {
+  if (!weather || !weather.cuaca || weather.cuaca.length < 2) return null;
+  const items = weather.cuaca.slice(1, 7);
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-      {now.image && <img src={now.image} alt={now.weather_desc} width={30} height={30} />}
-      <div>
-        <div style={{ fontSize: 15, fontWeight: 800 }}>{now.t}&deg;C &middot; {now.weather_desc}</div>
-        <div style={{ fontSize: 11, color: 'var(--muted)' }}>{lokasiLabel}</div>
-      </div>
+    <div style={{ display: 'flex', gap: 10, padding: '10px 0', borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)', margin: '8px 0', overflowX: 'auto' }}>
+      {items.map((f, i) => (
+        <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, flexShrink: 0, minWidth: 34 }}>
+          {f.image && <img src={f.image} alt={f.weather_desc} width={20} height={20} />}
+          <span style={{ fontSize: 11, fontWeight: 700 }}>{f.t}°</span>
+          <span style={{ fontSize: 9.5, color: 'var(--muted)' }}>{(f.local_datetime || '').slice(11, 16)}</span>
+        </div>
+      ))}
     </div>
   );
 }
 
-export default function Hero({ events, weather, onOpenMap }) {
-  const recent = [...events].sort((a, b) => `${b.tanggal} ${b.jam}`.localeCompare(`${a.tanggal} ${a.jam}`)).slice(0, 3);
-
+function Chip({ children }) {
   return (
-    <section style={{ maxWidth: 1280, margin: '0 auto', padding: '28px 24px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
-        <div style={{ fontSize: 13, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.03em', color: 'var(--accent)' }}>
+    <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--fg2)', background: 'var(--band)', border: '1px solid var(--border)', borderRadius: 999, padding: '4px 10px', whiteSpace: 'nowrap' }}>
+      {children}
+    </span>
+  );
+}
+
+export default function Hero({ events, weather, onOpenMap, isMobile }) {
+  const recent = [...events].sort((a, b) => `${b.tanggal} ${b.jam}`.localeCompare(`${a.tanggal} ${a.jam}`)).slice(0, 3);
+  const [index, setIndex] = useState(0);
+
+  useEffect(() => {
+    if (recent.length < 2) return;
+    const t = setInterval(() => setIndex((i) => (i + 1) % recent.length), 5000);
+    return () => clearInterval(t);
+  }, [recent.length]);
+
+  if (!recent.length) {
+    return (
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 13, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.03em', color: 'var(--accent)', marginBottom: 12 }}>
           Tiga Kejadian Terbaru
         </div>
-        <WeatherBadge weather={weather} />
+        <div style={{ fontSize: 13, color: 'var(--muted)' }}>Belum ada data kejadian.</div>
+      </div>
+    );
+  }
+
+  const ev = recent[Math.min(index, recent.length - 1)];
+  const color = severityColor(ev.jenisBencana);
+  const impacts = ev.impacts || [];
+  const totalKorban = impacts.reduce((s, im) => s + (im.totalKorban || 0), 0) || ev.korbanMeninggal + ev.korbanLuka + ev.korbanHilang;
+  const totalMengungsi = impacts.reduce((s, im) => s + (im.mengungsiL || 0) + (im.mengungsiP || 0), 0);
+  const totalKerugian = impacts.reduce((s, im) => s + (im.totalKerugian || 0), 0) || ev.kerugian || 0;
+  const upaya = impacts.map((im) => im.penangananTindakan).filter(Boolean).join('; ');
+
+  return (
+    <div style={{ width: isMobile ? '100%' : 340, flexShrink: 0 }}>
+      <div style={{ fontSize: 13, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.03em', color: 'var(--accent)', marginBottom: 12 }}>
+        Tiga Kejadian Terbaru
+      </div>
+      <div
+        style={{
+          background: 'var(--card-bg)',
+          border: '1px solid var(--border)',
+          borderRadius: 16,
+          padding: 18,
+          boxShadow: 'var(--glow-ring), var(--card-shadow)',
+          cursor: 'pointer',
+        }}
+        onClick={() => onOpenMap(ev.uuid)}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ width: 10, height: 10, borderRadius: '50%', background: color, display: 'inline-block' }} />
+            <span style={{ fontSize: 14, fontWeight: 700 }}>{ev.jenisBencana}</span>
+          </span>
+          {weather && weather.cuaca && weather.cuaca[0] ? (
+            <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12.5, fontWeight: 700 }}>
+              {weather.cuaca[0].image && <img src={weather.cuaca[0].image} width={18} height={18} alt="" />}
+              {weather.cuaca[0].t}°C
+            </span>
+          ) : (
+            <span style={{ fontSize: 12, color: 'var(--muted)' }}>—</span>
+          )}
+        </div>
+        <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 8 }}>{ev.tanggal} · {ev.jam} WITA</div>
+        <div style={{ fontSize: 12.5, color: 'var(--fg2)', marginTop: 3 }}>{ev.kecamatan}, {ev.desa}, {ev.kabupaten}</div>
+
+        <ForecastRow weather={weather} />
+
+        <div style={{ fontSize: 12, color: 'var(--fg2)', lineHeight: 1.5, marginBottom: 10, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+          {ev.keterangan}
+        </div>
+
+        <div style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.02em', marginBottom: 6 }}>
+          Total Dampak — Korban
+        </div>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
+          <Chip>👥 {totalKorban} korban</Chip>
+          <Chip>🏠 {totalMengungsi} mengungsi</Chip>
+        </div>
+
+        <div style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.02em', marginBottom: 6 }}>
+          Total Dampak — Kerusakan Bangunan
+        </div>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          <Chip>🏚 {ev.bangunanRb} rusak berat</Chip>
+          <Chip>🏠 {ev.bangunanRr} rusak ringan</Chip>
+          <Chip>💸 {formatRupiah(totalKerugian)}</Chip>
+        </div>
+
+        {upaya && (
+          <>
+            <div style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.02em', margin: '10px 0 4px' }}>
+              Upaya Penanganan
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--fg2)', lineHeight: 1.5 }}>{upaya}</div>
+          </>
+        )}
+
+        <button
+          onClick={(e) => { e.stopPropagation(); onOpenMap(ev.uuid); }}
+          style={{
+            marginTop: 14,
+            width: '100%',
+            fontFamily: 'inherit',
+            fontSize: 12.5,
+            fontWeight: 700,
+            color: 'white',
+            background: 'var(--accent-strong)',
+            border: 'none',
+            borderRadius: 10,
+            padding: '10px 14px',
+            cursor: 'pointer',
+          }}
+        >
+          📍 Lihat di Peta
+        </button>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 14 }}>
-        {recent.length === 0 && <div style={{ fontSize: 13, color: 'var(--muted)' }}>Belum ada data kejadian.</div>}
-        {recent.map((ev) => {
-          const color = severityColor(ev.jenisBencana);
-          return (
-            <div
-              key={ev.uuid}
-              onClick={() => onOpenMap(ev.uuid)}
+      {recent.length > 1 && (
+        <div style={{ display: 'flex', justifyContent: 'center', gap: 6, marginTop: 12 }}>
+          {recent.map((r, i) => (
+            <button
+              key={r.uuid}
+              onClick={() => setIndex(i)}
+              aria-label={`Kejadian ${i + 1}`}
               style={{
+                width: 7,
+                height: 7,
+                borderRadius: '50%',
+                border: 'none',
                 cursor: 'pointer',
-                background: 'var(--card-bg)',
-                border: '1px solid var(--border)',
-                borderRadius: 14,
-                padding: 18,
-                boxShadow: 'var(--card-shadow)',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 8,
-                transition: 'box-shadow .25s, transform .25s',
+                background: i === index ? 'var(--accent-strong)' : 'var(--border2)',
+                padding: 0,
               }}
-              onMouseEnter={(e) => { e.currentTarget.style.boxShadow = 'var(--card-shadow-hover)'; e.currentTarget.style.transform = 'translateY(-2px)'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.boxShadow = 'var(--card-shadow)'; e.currentTarget.style.transform = 'none'; }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span
-                  style={{
-                    width: 26,
-                    height: 26,
-                    borderRadius: 8,
-                    background: color,
-                    color: 'white',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    flexShrink: 0,
-                  }}
-                >
-                  <DisasterIcon jenis={ev.jenisBencana} width={15} height={15} stroke="white" />
-                </span>
-                <span style={{ fontSize: 13.5, fontWeight: 700 }}>{ev.jenisBencana}</span>
-                {ev.statusVerifikasi ? (
-                  <span style={{ marginLeft: 'auto', fontSize: 10, fontWeight: 700, color: 'oklch(52% 0.14 150)', background: 'oklch(52% 0.14 150 / 0.12)', borderRadius: 999, padding: '3px 8px' }}>
-                    Terverifikasi
-                  </span>
-                ) : (
-                  <span style={{ marginLeft: 'auto', fontSize: 10, fontWeight: 700, color: 'var(--muted)', background: 'var(--band)', borderRadius: 999, padding: '3px 8px' }}>
-                    Belum Verifikasi
-                  </span>
-                )}
-              </div>
-              <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>
-                {ev.tanggal} &middot; {ev.jam} WITA
-              </div>
-              <div style={{ fontSize: 12.5, color: 'var(--fg2)' }}>
-                {ev.kecamatan}, {ev.desa}, {ev.kabupaten}
-              </div>
-              <div style={{ display: 'flex', gap: 14, fontSize: 11.5, color: 'var(--muted)', marginTop: 4 }}>
-                <span>Meninggal: {ev.korbanMeninggal}</span>
-                <span>Luka: {ev.korbanLuka}</span>
-                <span>Hilang: {ev.korbanHilang}</span>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </section>
+            />
+          ))}
+        </div>
+      )}
+    </div>
   );
 }

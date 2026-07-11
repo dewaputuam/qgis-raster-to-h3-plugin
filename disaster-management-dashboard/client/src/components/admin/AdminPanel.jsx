@@ -71,19 +71,19 @@ export default function AdminPanel() {
     <section style={{ maxWidth: 1100, margin: '0 auto', padding: isMobile ? '28px 20px 60px' : '48px 40px 80px' }}>
       <div style={{ marginBottom: 24 }}>
         <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 8 }}>
-          Admin
+          Internal &middot; Tim/Relawan
         </div>
-        <h1 style={{ fontSize: isMobile ? 22 : 28, fontWeight: 800, letterSpacing: '-0.01em', margin: '0 0 6px' }}>Kelola Data</h1>
+        <h1 style={{ fontSize: isMobile ? 22 : 28, fontWeight: 800, letterSpacing: '-0.01em', margin: '0 0 6px' }}>Pengaturan Fetching Data</h1>
         <p style={{ fontSize: 13, color: 'var(--muted)', margin: 0, maxWidth: 520 }}>
-          Login ke SIK BPBD Bali dan kelola jadwal pengambilan data dari setiap sumber.
+          Kelola koneksi ke sumber data eksternal (API SIK &amp; BMKG) dan atur periode pengambilan data otomatis.
         </p>
       </div>
 
       <div style={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 14, padding: 20, boxShadow: 'var(--card-shadow)', marginBottom: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-            <div style={{ fontSize: 14, fontWeight: 700 }}>Login SIK BPBD Bali</div>
-            <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>Diperlukan untuk mengambil data kejadian bencana</div>
+            <div style={{ fontSize: 14, fontWeight: 700 }}>Login SIK</div>
+            <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>API SIK memerlukan autentikasi untuk mendapatkan token akses.</div>
           </div>
           <span
             style={{
@@ -166,9 +166,9 @@ export default function AdminPanel() {
               </div>
 
               <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
-                <Stat label="Terakhir Ambil" value={formatClockTime(st.lastFetch)} />
-                <Stat label="Jumlah Data" value={st.count == null ? '—' : `${st.count} item`} />
-                <Stat label="Ambil Berikutnya" value={key === 'sik' && !sikStatus.loggedIn ? '—' : formatCountdown(st.nextFetch, now)} />
+                <Stat label="Fetch Terakhir" value={formatClockTime(st.lastFetch)} />
+                <Stat label="Data Ditarik" value={st.count == null ? '—' : `${st.count} item`} />
+                <Stat label="Fetch Berikutnya" value={key === 'sik' && !sikStatus.loggedIn ? '—' : formatCountdown(st.nextFetch, now)} />
               </div>
 
               {st.error && (

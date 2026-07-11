@@ -36,7 +36,7 @@ export default function QuakeMarquee({ quakes }) {
             cursor: 'pointer',
           }}
         >
-          {nearOnly ? 'Semua Gempa' : 'Dekat Bali Saja'}
+          📍 {nearOnly ? 'Semua Gempa' : 'Filter dekat Bali'}
         </button>
       </div>
 
