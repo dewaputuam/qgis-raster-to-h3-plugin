@@ -102,14 +102,14 @@ export default function MapSidebar({
                   style={{
                     textAlign: 'left', display: 'flex', gap: 10, alignItems: 'center',
                     background: active ? 'var(--accent-08)' : 'transparent', border: 'none',
-                    borderRadius: 10, padding: '8px 10px', cursor: 'pointer', fontFamily: 'inherit',
+                    borderRadius: 10, padding: '8px 10px', cursor: 'pointer', fontFamily: 'inherit', color: 'var(--fg)',
                   }}
                 >
                   <span style={{ width: 26, height: 26, borderRadius: 8, background: color, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                     <DisasterIcon jenis={ev.jenisBencana} width={14} height={14} stroke="white" />
                   </span>
                   <span style={{ minWidth: 0, flex: 1 }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{ev.jenisBencana}</div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--fg)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{ev.jenisBencana}</div>
                     <div style={{ fontSize: 10.5, color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {ev.tanggal} &middot; {ev.kecamatan}, {ev.kabupaten}
                     </div>

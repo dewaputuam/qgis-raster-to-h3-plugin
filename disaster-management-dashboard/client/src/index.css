@@ -23,5 +23,5 @@ a { text-decoration: none; color: inherit; }
   96% { transform: scaleY(0.12); }
 }
 
-button { font: inherit; }
-select, input { font: inherit; }
+button { font: inherit; color: inherit; }
+select, input { font: inherit; color: inherit; }
