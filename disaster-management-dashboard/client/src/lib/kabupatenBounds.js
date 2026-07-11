@@ -1,3 +1,19 @@
+import wilayahBali from './wilayahBali.json';
+
+// Official Kemendagri kecamatan -> kabupaten/kota reference for Bali (57
+// kecamatan, no name collisions across kabupaten). This is an exact
+// administrative match, not a geometric approximation - use it as the
+// primary validity check whenever the event's kecamatan is recognized.
+const KECAMATAN_TO_KABUPATEN = new Map(
+  Object.entries(wilayahBali.kecamatanToKabupaten).map(([kec, kab]) => [kec.trim().toLowerCase(), kab])
+);
+
+export function isKecamatanInKabupaten(kabupaten, kecamatan) {
+  const resolved = KECAMATAN_TO_KABUPATEN.get((kecamatan || '').trim().toLowerCase());
+  if (!resolved) return null; // unrecognized kecamatan - caller should fall back to bounds
+  return resolved === (kabupaten || '').trim();
+}
+
 // Hand-estimated approximate bounding boxes per Bali kabupaten/kota, NOT
 // sourced from an official administrative boundary file (no GeoJSON polygon
 // data was available). These are coarse rectangles, not real polygons, so:
@@ -5,11 +21,8 @@
 //   are irregular)
 // - a coordinate can sit right on/near a border and read as "valid" for the
 //   wrong neighboring kabupaten
-// Good enough to catch genuinely wrong locations (event tagged "Karangasem"
-// with coordinates actually in Jembrana), not precise enough for anything
-// requiring survey-grade accuracy. Replace with a real GeoJSON boundary
-// dataset (e.g. from Badan Informasi Geospasial) if that level of precision
-// is ever needed.
+// Used only as a fallback when the event's kecamatan doesn't resolve via the
+// exact Kemendagri lookup above (e.g. kecamatan missing from the SIK record).
 export const KABUPATEN_BOUNDS = {
   Jembrana: { latMin: -8.45, latMax: -8.10, lngMin: 114.35, lngMax: 114.75 },
   Buleleng: { latMin: -8.30, latMax: -8.05, lngMin: 114.65, lngMax: 115.45 },

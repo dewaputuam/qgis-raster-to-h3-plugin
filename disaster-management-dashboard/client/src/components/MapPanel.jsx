@@ -5,7 +5,7 @@ import { disasterMarkerSvgHtml, Icon, ExpandIcon, LegendIcon, DisasterIcon } fro
 import MapSidebar from './MapSidebar.jsx';
 import EventDetailCard from './EventDetailCard.jsx';
 import EventMarquee from './EventMarquee.jsx';
-import { isWithinKabupatenBounds } from '../lib/kabupatenBounds.js';
+import { isWithinKabupatenBounds, isKecamatanInKabupaten } from '../lib/kabupatenBounds.js';
 
 const BALI_CENTER = [-8.4, 115.15];
 
@@ -13,12 +13,17 @@ function isWithinBaliBounds(lat, lng) {
   return Number.isFinite(lat) && Number.isFinite(lng) && lat <= -7.8 && lat >= -9.0 && lng >= 114.0 && lng <= 116.0;
 }
 
-// "Valid" means both inside Bali at all AND inside the specific kabupaten the
-// event claims to be in - catches a coordinate that's technically within
-// Bali but doesn't match its own reported kabupaten (see kabupatenBounds.js
-// for the approximation this relies on).
+// "Valid" means both inside Bali at all AND matching the kabupaten the event
+// claims to be in. Kabupaten membership is checked exactly against the
+// official Kemendagri kecamatan->kabupaten table first (isKecamatanInKabupaten
+// returns null only when the kecamatan name itself isn't recognized), and
+// only falls back to the coarse hand-estimated bounding box when there's no
+// kecamatan to check against.
 function isLocationValid(ev) {
-  return isWithinBaliBounds(ev.lat, ev.lng) && isWithinKabupatenBounds(ev.kabupaten, ev.lat, ev.lng);
+  if (!isWithinBaliBounds(ev.lat, ev.lng)) return false;
+  const exact = isKecamatanInKabupaten(ev.kabupaten, ev.kecamatan);
+  if (exact !== null) return exact;
+  return isWithinKabupatenBounds(ev.kabupaten, ev.lat, ev.lng);
 }
 
 export default function MapPanel({ open, events, regions, focusUuid, isMobile, onClose }) {

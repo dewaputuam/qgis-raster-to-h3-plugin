@@ -76,7 +76,12 @@ Edit `server/config.json`:
 - `fetchIntervalsMinutes` — default polling interval per source, one of `[1, 5, 15, 30, 60]`
 - `sikBaseUrl` — SIK BPBD Bali API base URL
 - `kabkotaIds` — kabupaten/kota → SIK `kabkota` id mapping (used to pull events for all of
-  Bali, since the SIK API is queried per kabupaten)
+  Bali, since the SIK API is queried per kabupaten). The original SIK access guide's own
+  reference table (§5) turned out to not match the official Kemendagri kabupaten numbering
+  from position 3 onward (it had Buleleng where Badung should be, shifting everything after
+  it by one) — this has been corrected to match the official order confirmed against the
+  Kemendagri kode-wilayah reference. See "Kabupaten labeling" below for the second,
+  independent safety net against this still being an inference about the SIK API's IDs.
 
 ## SIK login (Kelola Data panel)
 
@@ -118,18 +123,33 @@ server-side (`notification_queue` table) so it survives a page reload, and clear
 dismissed. See `GET /api/notifications` / `POST /api/notifications/dismiss` and
 `client/src/components/NewEventsNotification.jsx`.
 
+## Kabupaten labeling
+
+Each SIK event's `kabupaten` label is no longer taken purely from which `kabkota_id` it was
+queried under. `server/lib/sik.js` (`mapKejadian`) cross-checks the event's own `kecamatan`
+field against `server/data/wilayah-bali.json` — an exact kecamatan → kabupaten table
+generated from the official Kode Kemendagri reference (57 kecamatan across Bali's 9
+kabupaten/kota, no name collisions) — and uses that whenever the kecamatan is recognized,
+falling back to the kabkota_id-based name only if it isn't. This means a wrong/outdated
+`kabkotaIds` entry can no longer silently mislabel every event pulled under that id; it can
+only fail open for events whose kecamatan field is itself missing or misspelled.
+
 ## Location verification on the map
 
-The map's "kejadian tanpa lokasi valid" panel doesn't just check for missing
-coordinates — it checks whether an event's lat/lng actually falls inside the kabupaten it
-claims to be in (`client/src/lib/kabupatenBounds.js`), catching cases like an event tagged
-"Karangasem" whose coordinates actually point somewhere else. **The per-kabupaten boxes
-are hand-estimated rectangles, not real administrative boundaries** — no official GeoJSON
-boundary file was available while building this. That means: boxes overlap at shared
-borders, and an event near a kabupaten's edge can be flagged even though it's genuinely
-correct. Swap in a real boundary polygon dataset (e.g. from Badan Informasi Geospasial)
-and switch to point-in-polygon if that level of accuracy matters for your use — the
-check is isolated in one file to make that swap easy.
+The map's "kejadian tanpa lokasi valid" panel doesn't just check for missing coordinates —
+it checks whether an event's lat/lng actually falls inside the kabupaten it claims to be in
+(`client/src/lib/kabupatenBounds.js`), catching cases like an event tagged "Karangasem"
+whose coordinates actually point somewhere else. The check now has two tiers:
+
+1. **Exact match** — if the event's `kecamatan` is recognized in the same official
+   Kemendagri kecamatan → kabupaten table used server-side (`client/src/lib/wilayahBali.json`,
+   `isKecamatanInKabupaten`), that's authoritative: no ambiguity, no border cases.
+2. **Bounding-box fallback** — only used when the kecamatan is missing/unrecognized. These
+   boxes are still hand-estimated rectangles, not real administrative boundaries, so they
+   overlap at shared borders and can flag a genuinely correct event near a kabupaten's edge.
+   Swap in a real boundary polygon dataset (e.g. from Badan Informasi Geospasial) and switch
+   to point-in-polygon if you need this fallback tier to be more precise — it's isolated in
+   one file to make that swap easy.
 
 ### Known gap: SIK event detail schema
 

@@ -1,4 +1,5 @@
 import { config } from '../config.js';
+import { kabupatenFromKecamatan } from './wilayah.js';
 
 export class SikAuthError extends Error {
   constructor(message) {
@@ -25,10 +26,20 @@ export async function sikLogin(username, password) {
 // the subset of fields used for chat-style reporting (§4.2) - korban/kerugian/impacts
 // come from the detail endpoint and aren't fully specified, so they default to
 // empty/zero until the real payload shape is confirmed against a live account.
-// `kabupaten` is NOT read from the raw record: the guide never documents that
-// field's shape, and the API is already queried one kabupaten at a time (see
-// fetchAllEvents below), so the caller passes in the name it already knows.
+//
+// `kabupaten` used to just be the name the caller already knew from the loop
+// (queried one kabupaten at a time via kabkota_id - see fetchAllEvents). That
+// depended on the SIK guide's kabkota_id -> kabupaten table (§5), which turned
+// out to not match the official Kemendagri kabupaten numbering from position
+// 3 onward (Buleleng/Badung and everything after were shifted by one) -
+// config.json's kabkotaIds has been corrected to the official order, but
+// since that's still an inference about the SIK API's internal IDs, the
+// event's own `kecamatan` field is cross-checked against the authoritative
+// Kemendagri kecamatan->kabupaten table and wins whenever it resolves to a
+// known kabupaten, so a residual ID mismatch can't silently mislabel events.
 function mapKejadian(raw, kabupatenName) {
+  const kecamatan = (raw.kecamatan && raw.kecamatan.kecamatan) || '';
+  const resolvedKabupaten = kabupatenFromKecamatan(kecamatan) || kabupatenName;
   return {
     uuid: raw.uuid,
     tanggal: raw.DATE_KEJ || '',
@@ -36,8 +47,8 @@ function mapKejadian(raw, kabupatenName) {
     jenisBencana: (raw.jenis_bencana && raw.jenis_bencana.JENIS_KEJ) || '?',
     lokasi: raw.LOKASI_KEJ || '',
     keterangan: raw.KETERANGAN || raw.URAIAN_KEJ || '',
-    kabupaten: kabupatenName,
-    kecamatan: (raw.kecamatan && raw.kecamatan.kecamatan) || '',
+    kabupaten: resolvedKabupaten,
+    kecamatan,
     desa: (raw.desa && raw.desa.kelurahan) || '',
     korbanMeninggal: Number(raw.KORBAN_MENINGGAL ?? 0),
     korbanLuka: Number(raw.KORBAN_LUKA ?? 0),
