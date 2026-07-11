@@ -174,13 +174,19 @@ export function DisasterIcon({ jenis, ...rest }) {
   );
 }
 
-export function disasterMarkerSvgHtml(jenis, color, isLatest) {
+export function disasterMarkerSvgHtml(jenis, color, isLatest, unverified) {
   const paths = JENIS_ICON_PATHS[jenis];
   const body = paths
     ? paths.map((d) => `<path d="${d}"></path>`).join('')
     : `<path d="M12 2 2 21h20L12 2z"></path><line x1="12" y1="9" x2="12" y2="14"></line><circle cx="12" cy="17" r="0.6" fill="#fff"></circle>`;
-  const badge = `<div style="position:relative;width:30px;height:30px;border-radius:50%;background:${color};border:2px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.35);display:flex;align-items:center;justify-content:center;${isLatest ? 'animation:markerBounce 1.7s ease-in-out infinite;' : ''}">
+  // Unverified (failed location-vs-kabupaten check) markers get a dashed
+  // amber ring instead of a solid white one, plus a small "?" flag - visible
+  // on the map instead of hidden, per the operator's manual-verification
+  // workflow, but still clearly distinguished from confirmed locations.
+  const border = unverified ? '2px dashed oklch(70% 0.17 60)' : '2px solid #fff';
+  const badge = `<div style="position:relative;width:30px;height:30px;border-radius:50%;background:${color};border:${border};box-shadow:0 2px 8px rgba(0,0,0,0.35);display:flex;align-items:center;justify-content:center;${isLatest ? 'animation:markerBounce 1.7s ease-in-out infinite;' : ''}">
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${body}</svg>
+    ${unverified ? '<div style="position:absolute;top:-4px;right:-4px;width:14px;height:14px;border-radius:50%;background:oklch(70% 0.17 60);color:#fff;font-size:10px;font-weight:800;line-height:14px;text-align:center;border:1.5px solid #fff;">?</div>' : ''}
   </div>`;
   if (!isLatest) return `<div style="width:30px;height:30px;">${badge}</div>`;
   return `<div style="position:relative;width:42px;height:42px;display:flex;align-items:center;justify-content:center;">

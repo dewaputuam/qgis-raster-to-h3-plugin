@@ -42,7 +42,12 @@ export default function MapPanel({ open, events, regions, focusUuid, isMobile, o
     return true;
   });
   const invalidEvents = filteredEvents.filter((ev) => !isLocationValid(ev));
-  const mappable = filteredEvents.filter((ev) => isLocationValid(ev));
+  // Every event with *some* coordinate gets plotted - even ones that failed
+  // location verification - so nothing is silently hidden from an operator
+  // doing manual review; unverified ones just get a visually distinct marker
+  // (see disasterMarkerSvgHtml). Only events with no coordinate at all can't
+  // be placed on the map.
+  const plottable = filteredEvents.filter((ev) => Number.isFinite(ev.lat) && Number.isFinite(ev.lng));
   const selectedEvent = events.find((e) => e.uuid === selectedUuid) || null;
 
   useEffect(() => {
@@ -81,17 +86,18 @@ export default function MapPanel({ open, events, regions, focusUuid, isMobile, o
 
     let latestUuid = null;
     let latestKey = '';
-    mappable.forEach((ev) => {
+    plottable.forEach((ev) => {
       const key = `${ev.tanggal || ''} ${ev.jam || ''}`;
       if (key > latestKey) { latestKey = key; latestUuid = ev.uuid; }
     });
 
-    mappable.forEach((ev) => {
+    plottable.forEach((ev) => {
       const color = severityColor(ev.jenisBencana);
       const highlight = ev.uuid === latestUuid || ev.uuid === selectedUuid;
+      const unverified = !isLocationValid(ev);
       const icon = L.divIcon({
         className: '',
-        html: disasterMarkerSvgHtml(ev.jenisBencana, color, highlight),
+        html: disasterMarkerSvgHtml(ev.jenisBencana, color, highlight, unverified),
         iconSize: highlight ? [42, 42] : [30, 30],
         iconAnchor: highlight ? [21, 21] : [15, 15],
       });
@@ -237,6 +243,10 @@ export default function MapPanel({ open, events, regions, focusUuid, isMobile, o
                       <span style={{ fontSize: 11.5, color: 'var(--fg2)' }}>{jenis}</span>
                     </div>
                   ))}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, borderTop: '1px solid var(--border)', paddingTop: 10, marginTop: 4 }}>
+                    <span style={{ width: 20, height: 20, borderRadius: '50%', border: '2px dashed oklch(70% 0.17 60)', flexShrink: 0 }} />
+                    <span style={{ fontSize: 11, color: 'var(--muted)' }}>Garis putus-putus = lokasi belum terverifikasi (perlu dicek manual)</span>
+                  </div>
                 </div>
               </div>
             )}
