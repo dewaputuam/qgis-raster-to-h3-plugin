@@ -1,3 +1,19 @@
+import { useState } from 'react';
+
+// BMKG's icon URLs occasionally 404 or fail to load (network hiccups, retired
+// icon slugs). Falls back to a plain cloud glyph instead of a broken-image box.
+export function WeatherIcon({ src, alt, size = 20 }) {
+  const [broken, setBroken] = useState(false);
+  if (!src || broken) {
+    return (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="var(--muted)" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+        <path d="M7 17a4 4 0 01.5-7.97A5 5 0 0117 8a4 4 0 01-.5 8H7z" />
+      </svg>
+    );
+  }
+  return <img src={src} alt={alt || ''} width={size} height={size} onError={() => setBroken(true)} />;
+}
+
 const commonProps = {
   width: 18,
   height: 18,

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { formatRupiah } from '../lib/format.js';
 import { api } from '../lib/api.js';
-import { InfoIcon } from '../icons.jsx';
+import { InfoIcon, WeatherIcon } from '../icons.jsx';
 
 function norm(s) {
   return (s || '').toString().trim().toLowerCase();
@@ -46,7 +46,7 @@ function WeatherBox({ event, regions }) {
         <span style={{ fontSize: 10.5, color: 'var(--muted)' }}>Data: BMKG</span>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-        {now.image && <img src={now.image} width={30} height={30} alt="" />}
+        <WeatherIcon src={now.image} size={30} />
         <div>
           <div style={{ fontSize: 15, fontWeight: 800 }}>{now.t}&deg;C &middot; {now.weather_desc}</div>
           <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>Kelembapan {now.hu}% &middot; {(now.local_datetime || '').slice(11, 16)} WITA</div>
@@ -55,7 +55,7 @@ function WeatherBox({ event, regions }) {
       <div style={{ display: 'flex', gap: 10, overflowX: 'auto' }}>
         {strip.map((f, i) => (
           <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, flexShrink: 0, minWidth: 34 }}>
-            {f.image && <img src={f.image} width={20} height={20} alt="" />}
+            <WeatherIcon src={f.image} size={20} />
             <span style={{ fontSize: 10, color: 'var(--muted)' }}>{(f.local_datetime || '').slice(11, 16)}</span>
           </div>
         ))}

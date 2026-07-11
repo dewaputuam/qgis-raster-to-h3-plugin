@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { severityColor } from '../theme.js';
-import { DisasterIcon } from '../icons.jsx';
+import { DisasterIcon, WeatherIcon } from '../icons.jsx';
 import { formatRupiah } from '../lib/format.js';
 
 function ForecastRow({ weather }) {
@@ -10,7 +10,7 @@ function ForecastRow({ weather }) {
     <div style={{ display: 'flex', gap: 10, padding: '10px 0', borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)', margin: '8px 0', overflowX: 'auto' }}>
       {items.map((f, i) => (
         <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, flexShrink: 0, minWidth: 34 }}>
-          {f.image && <img src={f.image} alt={f.weather_desc} width={20} height={20} />}
+          <WeatherIcon src={f.image} alt={f.weather_desc} size={20} />
           <span style={{ fontSize: 11, fontWeight: 700 }}>{f.t}°</span>
           <span style={{ fontSize: 9.5, color: 'var(--muted)' }}>{(f.local_datetime || '').slice(11, 16)}</span>
         </div>
@@ -106,7 +106,7 @@ export default function Hero({ events, weather, onOpenMap, isMobile }) {
           </span>
           {weather && weather.cuaca && weather.cuaca[0] ? (
             <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12.5, fontWeight: 700 }}>
-              {weather.cuaca[0].image && <img src={weather.cuaca[0].image} width={18} height={18} alt="" />}
+              <WeatherIcon src={weather.cuaca[0].image} size={18} />
               {weather.cuaca[0].t}°C
             </span>
           ) : (
