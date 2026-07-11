@@ -58,10 +58,11 @@ export default function MapPanel({ open, events, regions, focusUuid, isMobile, o
   }, [open, sidebarCollapsed, fullscreen]);
 
   useEffect(() => {
-    const onEsc = (e) => { if (e.key === 'Escape' && open) onClose(); };
+    const onEsc = (e) => { if (e.key === 'Escape' && open) handleClose(); };
     window.addEventListener('keydown', onEsc);
     return () => window.removeEventListener('keydown', onEsc);
-  }, [open, onClose]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   function renderMarkers() {
     const map = mapRef.current;
@@ -120,10 +121,18 @@ export default function MapPanel({ open, events, regions, focusUuid, isMobile, o
     }
   }
 
+  function handleClose() {
+    if (document.fullscreenElement) {
+      document.exitFullscreen?.().catch(() => {});
+      setFullscreen(false);
+    }
+    onClose();
+  }
+
   return (
     <>
       <div
-        onClick={onClose}
+        onClick={handleClose}
         style={{
           position: 'fixed', inset: 0, background: 'rgba(15,17,20,0.5)', zIndex: 190,
           opacity: open ? 1 : 0, pointerEvents: open ? 'auto' : 'none', transition: 'opacity .35s ease',
@@ -141,7 +150,7 @@ export default function MapPanel({ open, events, regions, focusUuid, isMobile, o
           <button onClick={toggleFullscreen} aria-label="Layar penuh" style={fabStyle}>
             <ExpandIcon expanded={fullscreen} />
           </button>
-          <button onClick={onClose} aria-label="Tutup peta" style={fabStyle}>✕</button>
+          <button onClick={handleClose} aria-label="Tutup peta" style={fabStyle}>✕</button>
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -165,7 +174,7 @@ export default function MapPanel({ open, events, regions, focusUuid, isMobile, o
             <button
               onClick={() => mapRef.current && mapRef.current.setView(BALI_CENTER, 9, { animate: true })}
               style={{
-                position: 'absolute', top: 16, left: 16, zIndex: 1000, display: 'flex', alignItems: 'center', gap: 6,
+                position: 'absolute', top: 86, left: 16, zIndex: 1000, display: 'flex', alignItems: 'center', gap: 6,
                 padding: '9px 16px', background: 'var(--card-bg)', color: 'var(--fg)', border: '1px solid var(--border2)',
                 borderRadius: 999, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', boxShadow: 'var(--card-shadow-hover)',
               }}

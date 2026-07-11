@@ -23,7 +23,23 @@ Express server (server/)
 
 ## Setup
 
-Requires Node.js 18+ (uses the built-in `fetch`).
+Requires Node.js 18+ (uses the built-in `fetch`) — install it from https://nodejs.org
+first if you haven't already.
+
+### Easiest: double-click launcher
+
+- **Mac**: double-click `Start (Mac).command`
+- **Windows**: double-click `Start (Windows).bat`
+
+First run installs dependencies (one-time, takes a minute or two); every run after that
+starts the server straight away. Either way, once the server's ready it automatically
+opens `http://localhost:8787` in your default browser. Leave the terminal/server window
+it opens alongside the browser tab running — closing that window stops the app.
+
+(On Mac, the first double-click may show a security prompt since the script isn't
+code-signed — right-click the file and choose **Open** instead to bypass it once.)
+
+### Manual (any OS)
 
 ```bash
 cd disaster-management-dashboard
