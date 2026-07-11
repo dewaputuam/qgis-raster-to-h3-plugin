@@ -30,6 +30,11 @@ export default function MapSidebar({
   const kabupatenOptions = useMemo(() => [...new Set(regions.map((r) => r.kabupaten))].sort(), [regions]);
   const sorted = [...filteredEvents].sort((a, b) => `${b.tanggal} ${b.jam}`.localeCompare(`${a.tanggal} ${a.jam}`));
 
+  // On mobile, "collapsed" means fully hidden (a separate always-visible FAB
+  // in MapPanel handles re-opening it) rather than a slim rail, since there's
+  // no room for a permanently-visible rail on a narrow screen.
+  if (isMobile && collapsed) return null;
+
   return (
     <div
       style={{
@@ -37,26 +42,33 @@ export default function MapSidebar({
         flexShrink: 0,
         padding: isMobile ? 20 : collapsed ? '20px 12px' : 24,
         background: 'var(--card-bg)',
-        display: isMobile && collapsed ? 'none' : 'flex',
+        display: 'flex',
         flexDirection: 'column',
         borderRight: isMobile ? 'none' : '1px solid var(--border)',
         borderBottom: isMobile ? '1px solid var(--border)' : 'none',
-        transition: 'width .35s cubic-bezier(.22,.8,.25,1), padding .35s ease',
+        transition: isMobile ? 'none' : 'width .35s cubic-bezier(.22,.8,.25,1), padding .35s ease',
         overflow: 'hidden',
         height: '100%',
+        // Above Leaflet's own panes (marker pane is z-index 600, popup 700)
+        // and above the map's floating controls (reset/legend/invalid FABs
+        // are all z-index 1000) so nothing bleeds through this full-screen
+        // mobile overlay.
+        ...(isMobile ? { position: 'fixed', inset: 0, zIndex: 1100 } : {}),
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: collapsed ? 0 : 16, flexShrink: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: collapsed ? 0 : 16, flexShrink: 0, flexDirection: isMobile ? 'row-reverse' : 'row' }}>
         {!collapsed && (
           <span style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--accent)', background: 'var(--accent-08)', borderRadius: 999, padding: '4px 10px', letterSpacing: '0.03em' }}>
             KEJADIAN
           </span>
         )}
-        {!isMobile && (
-          <button onClick={onToggleCollapse} style={{ background: 'none', border: '1px solid var(--border2)', borderRadius: '50%', width: 28, height: 28, cursor: 'pointer', color: 'var(--muted)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <ChevronIcon pointRight={collapsed} />
-          </button>
-        )}
+        <button
+          onClick={onToggleCollapse}
+          aria-label={isMobile ? 'Tutup daftar kejadian' : undefined}
+          style={{ background: 'none', border: '1px solid var(--border2)', borderRadius: '50%', width: 28, height: 28, cursor: 'pointer', color: 'var(--muted)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+        >
+          {isMobile ? '✕' : <ChevronIcon pointRight={collapsed} />}
+        </button>
       </div>
 
       {!collapsed && (

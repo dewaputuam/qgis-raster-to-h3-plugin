@@ -27,7 +27,7 @@ export default function MapPanel({ open, events, regions, focusUuid, isMobile, o
   const mapRef = useRef(null);
   const markersRef = useRef({});
   const initedRef = useRef(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(isMobile);
   const [legendOpen, setLegendOpen] = useState(false);
   const [invalidOpen, setInvalidOpen] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
@@ -49,7 +49,7 @@ export default function MapPanel({ open, events, regions, focusUuid, isMobile, o
     if (!open || initedRef.current) return;
     initedRef.current = true;
     const t = setTimeout(() => {
-      const map = L.map(elRef.current, { zoomControl: true }).setView(BALI_CENTER, 10);
+      const map = L.map(elRef.current, { zoomControl: !isMobile }).setView(BALI_CENTER, 10);
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '&copy; OpenStreetMap contributors',
         maxZoom: 18,
@@ -110,8 +110,11 @@ export default function MapPanel({ open, events, regions, focusUuid, isMobile, o
     setSelectedUuid(uuid);
     const map = mapRef.current;
     const ev = events.find((e) => e.uuid === uuid);
-    const marker = markersRef.current[uuid];
-    if (map && ev && marker && Number.isFinite(ev.lat)) {
+    // Center on the raw coordinate even when there's no marker for it (e.g. an
+    // invalid-location event) - seeing where a bad coordinate actually points
+    // (wrong kabupaten, off in the ocean, etc.) is exactly what makes it
+    // obvious the data needs correcting.
+    if (map && ev && Number.isFinite(ev.lat) && Number.isFinite(ev.lng)) {
       map.setView([ev.lat, ev.lng], 13, { animate: true });
     }
   }
@@ -161,6 +164,20 @@ export default function MapPanel({ open, events, regions, focusUuid, isMobile, o
           </button>
           <button onClick={handleClose} aria-label="Tutup peta" style={fabStyle}>✕</button>
         </div>
+
+        {isMobile && sidebarCollapsed && (
+          <button
+            onClick={() => setSidebarCollapsed(false)}
+            style={{
+              position: 'fixed', top: 16, left: 16, zIndex: 999, display: 'flex', alignItems: 'center', gap: 6,
+              padding: '9px 14px', background: 'var(--card-bg)', color: 'var(--fg)', border: '1px solid var(--border2)',
+              borderRadius: 999, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', boxShadow: 'var(--card-shadow-hover)',
+            }}
+          >
+            <Icon name="pin" width={14} height={14} />
+            Kejadian ({filteredEvents.length})
+          </button>
+        )}
 
         <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
         <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
@@ -245,18 +262,29 @@ export default function MapPanel({ open, events, regions, focusUuid, isMobile, o
                 </div>
                 <div style={{ overflowY: 'auto', padding: 8 }}>
                   {invalidEvents.map((ev) => {
+                    const hasCoords = Number.isFinite(ev.lat) && Number.isFinite(ev.lng);
                     let reason = 'Koordinat kosong/tidak valid';
-                    if (Number.isFinite(ev.lat) && Number.isFinite(ev.lng)) {
+                    if (hasCoords) {
                       reason = isWithinBaliBounds(ev.lat, ev.lng)
                         ? `Koordinat tidak cocok dengan wilayah ${ev.kabupaten || '(kosong)'}`
                         : 'Koordinat di luar Provinsi Bali';
                     }
                     return (
-                      <div key={ev.uuid} style={{ padding: '8px 10px', fontSize: 11.5 }}>
+                      <button
+                        key={ev.uuid}
+                        onClick={() => { selectEvent(ev.uuid); setInvalidOpen(false); }}
+                        disabled={!hasCoords}
+                        title={hasCoords ? 'Lihat titik koordinat ini di peta' : 'Tidak ada koordinat untuk ditampilkan'}
+                        style={{
+                          display: 'block', width: '100%', textAlign: 'left', fontFamily: 'inherit', color: 'var(--fg)',
+                          background: ev.uuid === selectedUuid ? 'var(--accent-08)' : 'transparent', border: 'none',
+                          borderRadius: 10, padding: '8px 10px', fontSize: 11.5, cursor: hasCoords ? 'pointer' : 'default',
+                        }}
+                      >
                         <div style={{ fontWeight: 700 }}>{ev.jenisBencana}</div>
                         <div style={{ color: 'var(--fg2)' }}>{ev.tanggal} &middot; {ev.kecamatan}, {ev.kabupaten}</div>
                         <div style={{ color: 'oklch(58% 0.18 30)', marginTop: 2 }}>{reason}</div>
-                      </div>
+                      </button>
                     );
                   })}
                 </div>

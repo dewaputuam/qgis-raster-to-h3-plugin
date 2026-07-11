@@ -24,3 +24,11 @@ export function formatClockTime(ts) {
   if (!ts) return '—';
   return new Date(ts).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
+
+export function formatDateTime(ts) {
+  if (!ts) return '—';
+  const d = new Date(ts);
+  const datePart = d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+  const timePart = d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  return `${datePart}, ${timePart}`;
+}

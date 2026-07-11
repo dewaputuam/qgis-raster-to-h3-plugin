@@ -98,7 +98,13 @@ export default function App() {
             flexWrap: 'wrap',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <button
+            onClick={() => setView('public')}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 10, background: 'none', border: 'none',
+              cursor: 'pointer', padding: 0, color: 'inherit', textAlign: 'left', font: 'inherit',
+            }}
+          >
             <div
               style={{
                 width: 34,
@@ -117,10 +123,11 @@ export default function App() {
                 <circle cx="12" cy="17" r="0.6" fill="var(--accent-strong)" />
               </svg>
             </div>
-            <span style={{ fontWeight: 800, fontSize: 15, letterSpacing: '-0.01em', lineHeight: 1.25, maxWidth: 260 }}>
-              DASHBOARD MONITORING - SISTEM INFORMASI KEBENCANAAN
+            <span style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.25 }}>
+              <span style={{ fontWeight: 800, fontSize: 15, letterSpacing: '-0.01em' }}>Dashboard Monitoring</span>
+              <span style={{ fontWeight: 600, fontSize: 11.5, color: 'var(--muted)', letterSpacing: '0.01em' }}>Sistem Informasi Kebencanaan</span>
             </span>
-          </div>
+          </button>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <div style={{ display: 'flex', gap: 4, padding: 4, background: 'var(--band)', borderRadius: 999 }}>
               <ToggleBtn active={view === 'public'} onClick={() => setView('public')}>Publik</ToggleBtn>

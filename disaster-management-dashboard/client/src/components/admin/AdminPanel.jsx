@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { STATUS_META } from '../../theme.js';
 import { api } from '../../lib/api.js';
-import { formatClockTime, formatCountdown } from '../../lib/format.js';
+import { formatDateTime, formatCountdown } from '../../lib/format.js';
 import EventsList from '../EventsList.jsx';
 
 const SOURCE_DEFS = {
@@ -175,7 +175,7 @@ export default function AdminPanel({ events, regions, onOpenMap }) {
               </div>
 
               <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
-                <Stat label="Fetch Terakhir" value={formatClockTime(st.lastFetch)} />
+                <Stat label="Fetch Terakhir" value={formatDateTime(st.lastFetch)} />
                 <Stat label="Data Ditarik" value={st.count == null ? '—' : `${st.count} item`} />
                 <Stat label="Fetch Berikutnya" value={key === 'sik' && !sikStatus.loggedIn ? '—' : formatCountdown(st.nextFetch, now)} />
               </div>
