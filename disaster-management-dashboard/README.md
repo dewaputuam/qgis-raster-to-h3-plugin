@@ -87,11 +87,49 @@ with this app). On success:
 - the server logs in once against `sikBaseUrl + /auth/login` and gets a bearer token
 - the token is kept in the local SQLite file only (not on disk anywhere else) and used to
   poll `GET /lap-kejadian` for every kabupaten on the configured interval
-- **the password itself is never stored** — only a bcrypt hash is kept (purely so the
-  admin panel can show "last logged in as X"), and the app **never** auto re-logs-in
-  silently. When the token expires (60 min default), the source card flips to "Menunggu
-  Login" and the operator must type the password again. This matches the security
-  guidance in the SIK access guide (no silent retry on auth failure).
+
+### Token expiry: "Ingat sesi ini" (opt-in auto-relogin)
+
+The SIK access guide explicitly says not to silently retry login on auth failure — by
+default this app follows that: when the token expires (60 min default), the source card
+flips to "Menunggu Login" and the operator must type the password again.
+
+There's an **opt-in** checkbox on the login form, "Ingat sesi ini", for anyone who'd
+rather trade that off for unattended 24/7 operation. When checked, the password is
+encrypted (AES-256-GCM, key generated locally on first use at `server/data/.enc_key`,
+never committed/shipped) and stored alongside the bcrypt hash. The scheduler then
+silently re-logs in whenever the token expires, without operator involvement — a
+deliberate deviation from the guide's "no silent retry" rule, made knowingly per-install.
+Logging out always clears the stored encrypted password (re-enable the checkbox next
+login to turn auto-relogin back on). If the stored credentials themselves stop working
+(password changed on the SIK side), the scheduler gives up and falls back to the normal
+"please log in again" state rather than retrying forever.
+
+If you'd rather not store the password at all, even encrypted, leave the checkbox
+unchecked — everything else works the same, you'll just need to re-enter the password
+whenever the token expires.
+
+## New-event notifications
+
+Every scheduled SIK fetch compares the events it just pulled against what's already in
+the local database; any `uuid` that wasn't there before triggers a popup (top-right, any
+page) listing the new events with a jump-to-map link per item. The queue is stored
+server-side (`notification_queue` table) so it survives a page reload, and clears when
+dismissed. See `GET /api/notifications` / `POST /api/notifications/dismiss` and
+`client/src/components/NewEventsNotification.jsx`.
+
+## Location verification on the map
+
+The map's "kejadian tanpa lokasi valid" panel doesn't just check for missing
+coordinates — it checks whether an event's lat/lng actually falls inside the kabupaten it
+claims to be in (`client/src/lib/kabupatenBounds.js`), catching cases like an event tagged
+"Karangasem" whose coordinates actually point somewhere else. **The per-kabupaten boxes
+are hand-estimated rectangles, not real administrative boundaries** — no official GeoJSON
+boundary file was available while building this. That means: boxes overlap at shared
+borders, and an event near a kabupaten's edge can be flagged even though it's genuinely
+correct. Swap in a real boundary polygon dataset (e.g. from Badan Informasi Geospasial)
+and switch to point-in-polygon if that level of accuracy matters for your use — the
+check is isolated in one file to make that swap easy.
 
 ### Known gap: SIK event detail schema
 

@@ -5,11 +5,20 @@ import { disasterMarkerSvgHtml, Icon, ExpandIcon, LegendIcon, DisasterIcon } fro
 import MapSidebar from './MapSidebar.jsx';
 import EventDetailCard from './EventDetailCard.jsx';
 import EventMarquee from './EventMarquee.jsx';
+import { isWithinKabupatenBounds } from '../lib/kabupatenBounds.js';
 
 const BALI_CENTER = [-8.4, 115.15];
 
 function isWithinBaliBounds(lat, lng) {
   return Number.isFinite(lat) && Number.isFinite(lng) && lat <= -7.8 && lat >= -9.0 && lng >= 114.0 && lng <= 116.0;
+}
+
+// "Valid" means both inside Bali at all AND inside the specific kabupaten the
+// event claims to be in - catches a coordinate that's technically within
+// Bali but doesn't match its own reported kabupaten (see kabupatenBounds.js
+// for the approximation this relies on).
+function isLocationValid(ev) {
+  return isWithinBaliBounds(ev.lat, ev.lng) && isWithinKabupatenBounds(ev.kabupaten, ev.lat, ev.lng);
 }
 
 export default function MapPanel({ open, events, regions, focusUuid, isMobile, onClose }) {
@@ -32,8 +41,8 @@ export default function MapPanel({ open, events, regions, focusUuid, isMobile, o
     if (filters.end && ev.tanggal > filters.end) return false;
     return true;
   });
-  const invalidEvents = filteredEvents.filter((ev) => !isWithinBaliBounds(ev.lat, ev.lng));
-  const mappable = filteredEvents.filter((ev) => isWithinBaliBounds(ev.lat, ev.lng));
+  const invalidEvents = filteredEvents.filter((ev) => !isLocationValid(ev));
+  const mappable = filteredEvents.filter((ev) => isLocationValid(ev));
   const selectedEvent = events.find((e) => e.uuid === selectedUuid) || null;
 
   useEffect(() => {
@@ -235,12 +244,21 @@ export default function MapPanel({ open, events, regions, focusUuid, isMobile, o
                   Kejadian tanpa lokasi valid ({invalidEvents.length})
                 </div>
                 <div style={{ overflowY: 'auto', padding: 8 }}>
-                  {invalidEvents.map((ev) => (
-                    <div key={ev.uuid} style={{ padding: '8px 10px', fontSize: 11.5 }}>
-                      <div style={{ fontWeight: 700 }}>{ev.jenisBencana}</div>
-                      <div style={{ color: 'var(--muted)' }}>{ev.tanggal} &middot; {ev.kecamatan}, {ev.kabupaten}</div>
-                    </div>
-                  ))}
+                  {invalidEvents.map((ev) => {
+                    let reason = 'Koordinat kosong/tidak valid';
+                    if (Number.isFinite(ev.lat) && Number.isFinite(ev.lng)) {
+                      reason = isWithinBaliBounds(ev.lat, ev.lng)
+                        ? `Koordinat tidak cocok dengan wilayah ${ev.kabupaten || '(kosong)'}`
+                        : 'Koordinat di luar Provinsi Bali';
+                    }
+                    return (
+                      <div key={ev.uuid} style={{ padding: '8px 10px', fontSize: 11.5 }}>
+                        <div style={{ fontWeight: 700 }}>{ev.jenisBencana}</div>
+                        <div style={{ color: 'var(--fg2)' }}>{ev.tanggal} &middot; {ev.kecamatan}, {ev.kabupaten}</div>
+                        <div style={{ color: 'oklch(58% 0.18 30)', marginTop: 2 }}>{reason}</div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}

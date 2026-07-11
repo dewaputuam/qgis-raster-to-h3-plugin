@@ -7,6 +7,7 @@ import Hero from './components/Hero.jsx';
 import ReportPanel from './components/ReportPanel.jsx';
 import MapPanel from './components/MapPanel.jsx';
 import AdminPanel from './components/admin/AdminPanel.jsx';
+import NewEventsNotification from './components/NewEventsNotification.jsx';
 
 const DARK_MODE_KEY = 'disaster-dashboard-dark-mode';
 
@@ -67,6 +68,7 @@ export default function App() {
   };
 
   function jumpToEventOnMap(uuid) {
+    refreshEvents();
     setMapPanelOpen(true);
     setMapFocusUuid(uuid);
   }
@@ -172,6 +174,7 @@ export default function App() {
       {view === 'admin' && <AdminPanel events={events} regions={regions} onOpenMap={jumpToEventOnMap} />}
 
       <MapPanel open={mapPanelOpen} events={events} regions={regions} focusUuid={mapFocusUuid} isMobile={isMobile} onClose={() => setMapPanelOpen(false)} />
+      <NewEventsNotification onOpenMap={jumpToEventOnMap} />
     </div>
   );
 }

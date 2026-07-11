@@ -2,5 +2,6 @@ node_modules/
 client/dist/
 server/data/app.sqlite
 server/data/app.sqlite-*
+server/data/.enc_key
 .env
 *.log

@@ -21,7 +21,9 @@ export const api = {
   getFetchSettings: () => req('/admin/fetch-settings'),
   fetchSourceNow: (key) => req(`/admin/sources/${key}/fetch`, { method: 'POST' }),
   setSourceInterval: (key, minutes) => req(`/admin/sources/${key}/interval`, { method: 'POST', body: JSON.stringify({ minutes }) }),
-  sikLogin: (username, password) => req('/admin/sik/login', { method: 'POST', body: JSON.stringify({ username, password }) }),
+  sikLogin: (username, password, rememberSession) => req('/admin/sik/login', { method: 'POST', body: JSON.stringify({ username, password, rememberSession }) }),
   sikLogout: () => req('/admin/sik/logout', { method: 'POST' }),
   sikStatus: () => req('/admin/sik/status'),
+  getNotifications: () => req('/notifications'),
+  dismissNotifications: () => req('/notifications/dismiss', { method: 'POST' }),
 };

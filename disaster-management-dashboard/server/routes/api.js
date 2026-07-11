@@ -5,6 +5,7 @@ import * as db from '../db.js';
 import { sikLogin, SikAuthError } from '../lib/sik.js';
 import { scheduleSourceFetch, onIntervalChange } from '../lib/scheduler.js';
 import { fetchCuaca } from '../lib/bmkg.js';
+import { encrypt } from '../lib/crypto.js';
 
 export const router = Router();
 
@@ -69,16 +70,21 @@ router.post('/admin/sources/:key/interval', async (req, res) => {
 });
 
 router.post('/admin/sik/login', async (req, res) => {
-  const { username, password } = req.body || {};
+  const { username, password, rememberSession } = req.body || {};
   if (!username || !password) return res.status(400).json({ error: 'Username dan password wajib diisi.' });
   try {
     const { token } = await sikLogin(username, password);
     const tokenExpiresAt = Date.now() + config.sikTokenTtlMinutes * 60000;
     const passwordHash = bcrypt.hashSync(password, 10);
-    db.setAdminAuth({ username, passwordHash, token, tokenExpiresAt });
+    // Opt-in only: encrypted password is what lets the scheduler silently
+    // re-login when the token expires, instead of forcing the operator back
+    // to this form every ~60 minutes. Deliberate deviation from the SIK
+    // guide's "no silent retry" - the operator/BPBD chose this tradeoff.
+    const passwordEnc = rememberSession ? encrypt(password) : null;
+    db.setAdminAuth({ username, passwordHash, passwordEnc, token, tokenExpiresAt });
     db.setSourceStatus('sik', { status: 'idle', error: null });
     scheduleSourceFetch('sik');
-    res.json({ loggedIn: true, username, tokenExpiresAt });
+    res.json({ loggedIn: true, username, tokenExpiresAt, rememberSession: !!rememberSession });
   } catch (err) {
     if (err instanceof SikAuthError) return res.status(401).json({ error: err.message });
     res.status(502).json({ error: err.message || String(err) });
@@ -87,6 +93,7 @@ router.post('/admin/sik/login', async (req, res) => {
 
 router.post('/admin/sik/logout', (req, res) => {
   db.clearAdminToken();
+  db.clearAdminPasswordEnc();
   db.setSourceStatus('sik', { status: 'unauth', nextFetch: null, error: null });
   res.json({ ok: true });
 });
@@ -98,9 +105,19 @@ router.get('/admin/sik/status', (req, res) => {
     loggedIn,
     username: admin.username || null,
     tokenExpiresAt: loggedIn ? admin.tokenExpiresAt : null,
+    rememberSession: !!admin.passwordEnc,
   });
 });
 
 router.get('/admin/fetch-settings', (req, res) => {
   res.json({ data: db.getAdminConfig().fetchSettings });
+});
+
+router.get('/notifications', (req, res) => {
+  res.json({ data: db.getNotificationQueue() });
+});
+
+router.post('/notifications/dismiss', (req, res) => {
+  db.clearNotificationQueue();
+  res.json({ ok: true });
 });

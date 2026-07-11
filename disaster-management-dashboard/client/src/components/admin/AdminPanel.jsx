@@ -18,6 +18,7 @@ export default function AdminPanel({ events, regions, onOpenMap }) {
   const [fetchSettings, setFetchSettings] = useState({ sik: 15, cuaca: 15, gempa: 15 });
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [rememberSession, setRememberSession] = useState(true);
   const [loginError, setLoginError] = useState(null);
   const [loginLoading, setLoginLoading] = useState(false);
   const [now, setNow] = useState(Date.now());
@@ -41,7 +42,7 @@ export default function AdminPanel({ events, regions, onOpenMap }) {
     setLoginLoading(true);
     setLoginError(null);
     try {
-      await api.sikLogin(username.trim(), password.trim());
+      await api.sikLogin(username.trim(), password.trim(), rememberSession);
       setPassword('');
       refresh();
     } catch (err) {
@@ -107,6 +108,7 @@ export default function AdminPanel({ events, regions, onOpenMap }) {
               <div style={{ fontSize: 13, fontWeight: 700 }}>{sikStatus.username}</div>
               <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>
                 Token kedaluwarsa dalam {formatCountdown(sikStatus.tokenExpiresAt, now)}
+                {sikStatus.rememberSession && ' — akan login otomatis'}
               </div>
             </div>
             <button
@@ -117,27 +119,33 @@ export default function AdminPanel({ events, regions, onOpenMap }) {
             </button>
           </div>
         ) : (
-          <form onSubmit={onLogin} style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-            <input
-              placeholder="Username SIK"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              style={inputStyle}
-            />
-            <input
-              placeholder="Password SIK"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              style={inputStyle}
-            />
-            <button
-              type="submit"
-              disabled={loginLoading}
-              style={{ fontFamily: 'inherit', fontSize: 12.5, fontWeight: 700, color: 'white', background: 'var(--accent-strong)', border: 'none', borderRadius: 8, padding: '9px 18px', cursor: loginLoading ? 'default' : 'pointer', opacity: loginLoading ? 0.6 : 1 }}
-            >
-              {loginLoading ? 'Masuk…' : 'Login'}
-            </button>
+          <form onSubmit={onLogin} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              <input
+                placeholder="Username SIK"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                style={inputStyle}
+              />
+              <input
+                placeholder="Password SIK"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                style={inputStyle}
+              />
+              <button
+                type="submit"
+                disabled={loginLoading}
+                style={{ fontFamily: 'inherit', fontSize: 12.5, fontWeight: 700, color: 'white', background: 'var(--accent-strong)', border: 'none', borderRadius: 8, padding: '9px 18px', cursor: loginLoading ? 'default' : 'pointer', opacity: loginLoading ? 0.6 : 1 }}
+              >
+                {loginLoading ? 'Masuk…' : 'Login'}
+              </button>
+            </div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11.5, color: 'var(--muted)', cursor: 'pointer' }}>
+              <input type="checkbox" checked={rememberSession} onChange={(e) => setRememberSession(e.target.checked)} />
+              Ingat sesi ini (login otomatis saat token habis — password disimpan terenkripsi di komputer ini)
+            </label>
           </form>
         )}
         {loginError && (

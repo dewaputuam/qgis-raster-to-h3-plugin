@@ -1,7 +1,8 @@
 import { config } from '../config.js';
 import * as db from '../db.js';
 import { fetchCuaca, fetchGempaTerkini } from './bmkg.js';
-import { fetchAllEvents, SikAuthError } from './sik.js';
+import { fetchAllEvents, sikLogin, SikAuthError } from './sik.js';
+import { decrypt } from './crypto.js';
 
 const timers = {};
 
@@ -10,22 +11,67 @@ function isLoggedIn() {
   return !!(admin.token && admin.tokenExpiresAt && Date.now() < admin.tokenExpiresAt);
 }
 
+function hasStoredCredentials() {
+  const admin = db.getAdminConfig();
+  return !!(admin.username && admin.passwordEnc);
+}
+
 function getIntervalMinutes(key) {
   const admin = db.getAdminConfig();
   return (admin.fetchSettings && admin.fetchSettings[key]) || config.fetchIntervalsMinutes[key] || 15;
 }
 
+// Silent re-login using the encrypted password stored at the operator's own
+// opt-in ("Ingat sesi ini"). Only ever called from the scheduler, never in
+// response to a user action - if the stored credentials themselves are no
+// longer valid (password changed, account disabled), this fails and the
+// caller falls back to the normal "unauth, please log in" state.
+async function attemptSikRelogin() {
+  const admin = db.getAdminConfig();
+  if (!admin.username || !admin.passwordEnc) return false;
+  try {
+    const password = decrypt(admin.passwordEnc);
+    const { token } = await sikLogin(admin.username, password);
+    const tokenExpiresAt = Date.now() + config.sikTokenTtlMinutes * 60000;
+    db.updateAdminToken(token, tokenExpiresAt);
+    return true;
+  } catch (err) {
+    if (err instanceof SikAuthError) {
+      // Stored password no longer works - stop trying with it, require a
+      // fresh manual login rather than fail silently forever.
+      db.clearAdminToken();
+      db.clearAdminPasswordEnc();
+    }
+    return false;
+  }
+}
+
 async function runFetch(key) {
   if (key === 'sik' && !isLoggedIn()) {
-    db.setSourceStatus('sik', { status: 'unauth' });
-    return;
+    const relogged = hasStoredCredentials() && (await attemptSikRelogin());
+    if (!relogged) {
+      db.setSourceStatus('sik', { status: 'unauth' });
+      return;
+    }
   }
   db.setSourceStatus(key, { status: 'loading', error: null });
   try {
     let count = 0;
     if (key === 'sik') {
-      const admin = db.getAdminConfig();
-      const events = await fetchAllEvents(admin.token, { getPreviousImpacts: db.getEventImpacts });
+      let admin = db.getAdminConfig();
+      let events;
+      try {
+        events = await fetchAllEvents(admin.token, { getPreviousImpacts: db.getEventImpacts });
+      } catch (err) {
+        if (!(err instanceof SikAuthError) || !(await attemptSikRelogin())) throw err;
+        admin = db.getAdminConfig();
+        events = await fetchAllEvents(admin.token, { getPreviousImpacts: db.getEventImpacts });
+      }
+      const existingUuids = db.getAllEventUuids();
+      const newOnes = events
+        .filter((ev) => !existingUuids.has(ev.uuid))
+        .map((ev) => ({ uuid: ev.uuid, jenisBencana: ev.jenisBencana, tanggal: ev.tanggal, jam: ev.jam, kecamatan: ev.kecamatan, kabupaten: ev.kabupaten }));
+      db.pushNotifications(newOnes);
       for (const ev of events) db.upsertEvent(ev);
       count = events.length;
     } else if (key === 'cuaca') {
@@ -76,7 +122,7 @@ export function onIntervalChange(key, minutes) {
 export function startInitialSchedules() {
   scheduleSourceFetch('cuaca');
   scheduleSourceFetch('gempa');
-  if (isLoggedIn()) scheduleSourceFetch('sik');
+  if (isLoggedIn() || hasStoredCredentials()) scheduleSourceFetch('sik');
 }
 
 export function stopAllSchedules() {

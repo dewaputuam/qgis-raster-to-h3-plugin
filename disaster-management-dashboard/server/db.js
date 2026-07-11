@@ -72,7 +72,21 @@ CREATE TABLE IF NOT EXISTS regions (
   kecamatan TEXT,
   desa TEXT
 );
+
+CREATE TABLE IF NOT EXISTS notification_queue (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  events_json TEXT NOT NULL DEFAULT '[]'
+);
 `);
+
+// Lightweight migration: admin_config predates the opt-in auto-relogin
+// feature, so existing installs won't have this column yet.
+const adminConfigCols = db.prepare("PRAGMA table_info(admin_config)").all().map((c) => c.name);
+if (!adminConfigCols.includes('password_enc')) {
+  db.exec('ALTER TABLE admin_config ADD COLUMN password_enc TEXT');
+}
+
+db.prepare(`INSERT INTO notification_queue (id, events_json) VALUES (1, '[]') ON CONFLICT(id) DO NOTHING`).run();
 
 for (const key of Object.keys(config.fetchIntervalsMinutes)) {
   db.prepare(
@@ -210,20 +224,29 @@ export function getAdminConfig() {
   return {
     username: row.username,
     passwordHash: row.password_hash,
+    passwordEnc: row.password_enc,
     token: row.token,
     tokenExpiresAt: row.token_expires_at,
     fetchSettings: JSON.parse(row.fetch_settings),
   };
 }
 
-export function setAdminAuth({ username, passwordHash, token, tokenExpiresAt }) {
+export function setAdminAuth({ username, passwordHash, passwordEnc, token, tokenExpiresAt }) {
   db.prepare(`
-    UPDATE admin_config SET username = ?, password_hash = ?, token = ?, token_expires_at = ? WHERE id = 1
-  `).run(username, passwordHash, token, tokenExpiresAt);
+    UPDATE admin_config SET username = ?, password_hash = ?, password_enc = ?, token = ?, token_expires_at = ? WHERE id = 1
+  `).run(username, passwordHash, passwordEnc ?? null, token, tokenExpiresAt);
+}
+
+export function updateAdminToken(token, tokenExpiresAt) {
+  db.prepare(`UPDATE admin_config SET token = ?, token_expires_at = ? WHERE id = 1`).run(token, tokenExpiresAt);
 }
 
 export function clearAdminToken() {
   db.prepare(`UPDATE admin_config SET token = NULL, token_expires_at = NULL WHERE id = 1`).run();
+}
+
+export function clearAdminPasswordEnc() {
+  db.prepare(`UPDATE admin_config SET password_enc = NULL WHERE id = 1`).run();
 }
 
 export function setFetchSettings(settings) {
@@ -252,4 +275,25 @@ export function getLatestQuakes() {
   const row = db.prepare('SELECT * FROM quakes ORDER BY id DESC LIMIT 1').get();
   if (!row) return [];
   return JSON.parse(row.data_json);
+}
+
+export function getAllEventUuids() {
+  return new Set(db.prepare('SELECT uuid FROM events').all().map((r) => r.uuid));
+}
+
+export function getNotificationQueue() {
+  const row = db.prepare('SELECT events_json FROM notification_queue WHERE id = 1').get();
+  return JSON.parse(row?.events_json || '[]');
+}
+
+export function pushNotifications(newEvents) {
+  if (!newEvents.length) return;
+  const current = getNotificationQueue();
+  const seen = new Set(current.map((e) => e.uuid));
+  const merged = [...current, ...newEvents.filter((e) => !seen.has(e.uuid))];
+  db.prepare('UPDATE notification_queue SET events_json = ? WHERE id = 1').run(JSON.stringify(merged));
+}
+
+export function clearNotificationQueue() {
+  db.prepare(`UPDATE notification_queue SET events_json = '[]' WHERE id = 1`).run();
 }
