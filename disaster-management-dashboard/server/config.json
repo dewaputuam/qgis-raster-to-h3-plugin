@@ -1,0 +1,23 @@
+{
+  "port": 8787,
+  "defaultAdm4": "51.71.01.1005",
+  "fetchIntervalsMinutes": { "sik": 15, "cuaca": 15, "gempa": 15 },
+  "allowedIntervalOptions": [1, 5, 15, 30, 60],
+  "sikTokenTtlMinutes": 60,
+  "bmkgCuacaUrl": "https://api.bmkg.go.id/publik/prakiraan-cuaca",
+  "bmkgGempaUrl": "https://data.bmkg.go.id/DataMKG/TEWS/gempaterkini.json",
+  "sikBaseUrl": "https://asik.bpbdbali.com/api/v1",
+  "nearBaliRadiusKm": 600,
+  "baliCenter": { "lat": -8.4, "lon": 115.19 },
+  "kabkotaIds": {
+    "Jembrana": 1,
+    "Tabanan": 2,
+    "Buleleng": 3,
+    "Badung": 4,
+    "Gianyar": 5,
+    "Klungkung": 6,
+    "Bangli": 7,
+    "Karangasem": 8,
+    "Denpasar": 9
+  }
+}
