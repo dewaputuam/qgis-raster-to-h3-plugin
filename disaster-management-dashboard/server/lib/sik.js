@@ -22,24 +22,42 @@ export async function sikLogin(username, password) {
   return { token, user: body.data.user || null };
 }
 
+// The guide never documents a kabupaten field on the kejadian record itself
+// (only kecamatan.kecamatan / desa.kelurahan, both nested join objects) - but
+// since those two ARE nested joins, the real API very plausibly also returns
+// an equivalent kabkota/kabupaten join directly on each event. These are
+// guessed shapes (mirroring the documented kecamatan/desa pattern) to try
+// first, since a value straight from the API is strictly more trustworthy
+// than anything derived indirectly - confirm/adjust the field name once a
+// real raw sample has been logged (see fetchAllEvents' logSample).
+function directKabupatenFromRaw(raw) {
+  const k = raw.kabkota || raw.kabupaten;
+  if (!k) return null;
+  if (typeof k === 'string') return k;
+  return k.kabkota || k.kabupaten || k.nama || k.nama_kabkota || k.nama_kabupaten || null;
+}
+
 // Maps the fields documented in the SIK access guide. The guide only documents
 // the subset of fields used for chat-style reporting (§4.2) - korban/kerugian/impacts
 // come from the detail endpoint and aren't fully specified, so they default to
 // empty/zero until the real payload shape is confirmed against a live account.
 //
-// `kabupaten` used to just be the name the caller already knew from the loop
-// (queried one kabupaten at a time via kabkota_id - see fetchAllEvents). That
-// depended on the SIK guide's kabkota_id -> kabupaten table (§5), which turned
-// out to not match the official Kemendagri kabupaten numbering from position
-// 3 onward (Buleleng/Badung and everything after were shifted by one) -
-// config.json's kabkotaIds has been corrected to the official order, but
-// since that's still an inference about the SIK API's internal IDs, the
-// event's own `kecamatan` field is cross-checked against the authoritative
-// Kemendagri kecamatan->kabupaten table and wins whenever it resolves to a
-// known kabupaten, so a residual ID mismatch can't silently mislabel events.
+// `kabupaten` resolution order, most to least trustworthy:
+// 1. A kabkota/kabupaten field straight off the raw record, if the API
+//    actually returns one (see directKabupatenFromRaw above).
+// 2. The event's own `kecamatan` field cross-checked against the official
+//    Kemendagri kecamatan->kabupaten table (kabupatenFromKecamatan) - exact
+//    and independent of any assumption about the SIK API's internal IDs.
+// 3. The name the caller already knew from the loop (queried one kabupaten
+//    at a time via kabkota_id - see fetchAllEvents), which depends on the SIK
+//    guide's kabkota_id -> kabupaten table (§5). That table turned out to not
+//    match the official Kemendagri numbering from position 3 onward
+//    (Buleleng/Badung and everything after were shifted by one) -
+//    config.json's kabkotaIds has been corrected, but it's still an inference
+//    about the SIK API's internal IDs, so it's only the last resort here.
 function mapKejadian(raw, kabupatenName) {
   const kecamatan = (raw.kecamatan && raw.kecamatan.kecamatan) || '';
-  const resolvedKabupaten = kabupatenFromKecamatan(kecamatan) || kabupatenName;
+  const resolvedKabupaten = directKabupatenFromRaw(raw) || kabupatenFromKecamatan(kecamatan) || kabupatenName;
   return {
     uuid: raw.uuid,
     tanggal: raw.DATE_KEJ || '',
@@ -123,6 +141,7 @@ async function mapWithConcurrency(items, limit, fn) {
 
 export async function fetchAllEvents(token, { getPreviousImpacts } = {}) {
   const kabkotaEntries = Object.entries(config.kabkotaIds);
+  let loggedListSample = false;
   const results = await Promise.all(
     kabkotaEntries.map(async ([kabupatenName, id]) => {
       const res = await fetch(`${config.sikBaseUrl}/lap-kejadian?kabkota=${id}&per_page=200`, {
@@ -132,6 +151,10 @@ export async function fetchAllEvents(token, { getPreviousImpacts } = {}) {
       if (!res.ok) throw new Error(`SIK lap-kejadian HTTP ${res.status} (kabkota=${id})`);
       const body = await res.json();
       const items = (body && body.data && body.data.data) || [];
+      if (!loggedListSample && items.length > 0) {
+        loggedListSample = true;
+        console.log(`[sik] sample raw list item (kabkota=${id}, expected kabupaten=${kabupatenName}):`, JSON.stringify(items[0], null, 2));
+      }
       return items.map((raw) => mapKejadian(raw, kabupatenName));
     })
   );

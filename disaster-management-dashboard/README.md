@@ -125,14 +125,24 @@ dismissed. See `GET /api/notifications` / `POST /api/notifications/dismiss` and
 
 ## Kabupaten labeling
 
-Each SIK event's `kabupaten` label is no longer taken purely from which `kabkota_id` it was
-queried under. `server/lib/sik.js` (`mapKejadian`) cross-checks the event's own `kecamatan`
-field against `server/data/wilayah-bali.json` — an exact kecamatan → kabupaten table
-generated from the official Kode Kemendagri reference (57 kecamatan across Bali's 9
-kabupaten/kota, no name collisions) — and uses that whenever the kecamatan is recognized,
-falling back to the kabkota_id-based name only if it isn't. This means a wrong/outdated
-`kabkotaIds` entry can no longer silently mislabel every event pulled under that id; it can
-only fail open for events whose kecamatan field is itself missing or misspelled.
+Each SIK event's `kabupaten` label is resolved in `server/lib/sik.js` (`mapKejadian`),
+most to least trustworthy:
+
+1. **Direct from the raw record**, if the API actually returns a kabkota/kabupaten field on
+   the event itself (`directKabupatenFromRaw`) — guessed shapes mirroring the two fields the
+   guide *does* document (`kecamatan.kecamatan`, `desa.kelurahan`, both nested join objects),
+   since a real kabkota join is plausible but unconfirmed. `fetchAllEvents` logs one raw list
+   item to the console on first fetch — check that log against a live account and adjust
+   `directKabupatenFromRaw`'s guessed field names to match once you can see the real shape.
+2. **The event's own `kecamatan` field**, cross-checked against `server/data/wilayah-bali.json`
+   — an exact kecamatan → kabupaten table generated from the official Kode Kemendagri
+   reference (57 kecamatan across Bali's 9 kabupaten/kota, no name collisions). Independent
+   of any assumption about the SIK API's internal IDs.
+3. **The name the caller already knew from the loop** (queried one kabupaten at a time via
+   `kabkota_id`) — last resort, since it depends on `kabkotaIds` being correct. This is what
+   the SIK guide's own kabkota_id → kabupaten table (§5) got wrong (Buleleng/Badung and
+   everything after were shifted by one vs. the official Kemendagri numbering); `kabkotaIds`
+   has been corrected, but tier 3 is only reached if tiers 1 and 2 both come up empty.
 
 ## Location verification on the map
 
