@@ -94,6 +94,20 @@ router.post('/admin/sources/:key/interval', async (req, res) => {
   res.json({ ok: true });
 });
 
+// How far back to pull SIK events from (the guide notes server-side date
+// filtering on this API is unreliable, so it's applied to the fetched list
+// afterward - see fetchAllEvents in lib/sik.js). Takes effect on the next
+// scheduled or manual SIK fetch, not retroactively.
+router.post('/admin/sik/range-months', (req, res) => {
+  const months = Number(req.body?.months);
+  if (!config.allowedSikRangeMonthsOptions.includes(months)) {
+    return res.status(400).json({ error: `months must be one of ${config.allowedSikRangeMonthsOptions.join(', ')}` });
+  }
+  const admin = db.getAdminConfig();
+  db.setFetchSettings({ ...admin.fetchSettings, sikRangeMonths: months });
+  res.json({ ok: true });
+});
+
 router.post('/admin/sik/login', async (req, res) => {
   // No "required" pre-check here: whatever's submitted (including blank)
   // goes straight to the real SIK login call below, and success is judged
@@ -139,7 +153,9 @@ router.get('/admin/sik/status', (req, res) => {
 });
 
 router.get('/admin/fetch-settings', (req, res) => {
-  res.json({ data: db.getAdminConfig().fetchSettings });
+  const fetchSettings = db.getAdminConfig().fetchSettings;
+  // Fallback for installs whose stored settings predate this option.
+  res.json({ data: { sikRangeMonths: config.defaultSikRangeMonths, ...fetchSettings } });
 });
 
 router.get('/notifications', (req, res) => {

@@ -99,7 +99,7 @@ for (const key of Object.keys(config.fetchIntervalsMinutes)) {
   ).run(key, key === 'sik' ? 'unauth' : 'idle');
 }
 db.prepare(`INSERT INTO admin_config (id, fetch_settings) VALUES (1, ?) ON CONFLICT(id) DO NOTHING`).run(
-  JSON.stringify(config.fetchIntervalsMinutes)
+  JSON.stringify({ ...config.fetchIntervalsMinutes, sikRangeMonths: config.defaultSikRangeMonths })
 );
 
 // node:sqlite's StatementSync throws on named params that aren't referenced

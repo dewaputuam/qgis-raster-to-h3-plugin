@@ -21,6 +21,14 @@ function getIntervalMinutes(key) {
   return (admin.fetchSettings && admin.fetchSettings[key]) || config.fetchIntervalsMinutes[key] || 15;
 }
 
+// Falls back to the config default for installs whose stored fetch_settings
+// predates this option (ON CONFLICT DO NOTHING on the seed insert means an
+// existing row never picks up a newly-added key automatically).
+function getSikRangeMonths() {
+  const admin = db.getAdminConfig();
+  return (admin.fetchSettings && admin.fetchSettings.sikRangeMonths) || config.defaultSikRangeMonths || 3;
+}
+
 // Silent re-login using the encrypted password stored at the operator's own
 // opt-in ("Ingat sesi ini"). Only ever called from the scheduler, never in
 // response to a user action - if the stored credentials themselves are no
@@ -59,13 +67,14 @@ async function runFetch(key) {
     let count = 0;
     if (key === 'sik') {
       let admin = db.getAdminConfig();
+      const rangeMonths = getSikRangeMonths();
       let events;
       try {
-        events = await fetchAllEvents(admin.token, { getPreviousImpacts: db.getEventImpacts });
+        events = await fetchAllEvents(admin.token, { getPreviousImpacts: db.getEventImpacts, rangeMonths });
       } catch (err) {
         if (!(err instanceof SikAuthError) || !(await attemptSikRelogin())) throw err;
         admin = db.getAdminConfig();
-        events = await fetchAllEvents(admin.token, { getPreviousImpacts: db.getEventImpacts });
+        events = await fetchAllEvents(admin.token, { getPreviousImpacts: db.getEventImpacts, rangeMonths });
       }
       const existingUuids = db.getAllEventUuids();
       const newOnes = events

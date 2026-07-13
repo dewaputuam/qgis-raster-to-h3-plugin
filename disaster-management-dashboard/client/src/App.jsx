@@ -198,7 +198,7 @@ export default function App() {
             }}
           >
             <Hero events={events} weather={weather} onOpenMap={jumpToEventOnMap} isMobile={isMobile} />
-            <ReportPanel events={events} isMobile={isMobile} onOpenMap={jumpToEventOnMap} />
+            <ReportPanel events={events} isMobile={isMobile} onOpenMap={jumpToEventOnMap} kabupatenScope={kabupatenScope} />
           </section>
         </>
       )}

@@ -3,6 +3,8 @@
   "defaultAdm4": "51.71.01.1005",
   "fetchIntervalsMinutes": { "sik": 15, "cuaca": 15, "gempa": 15 },
   "allowedIntervalOptions": [1, 5, 15, 30, 60],
+  "allowedSikRangeMonthsOptions": [1, 2, 3, 6],
+  "defaultSikRangeMonths": 3,
   "sikTokenTtlMinutes": 60,
   "bmkgCuacaUrl": "https://api.bmkg.go.id/publik/prakiraan-cuaca",
   "bmkgGempaUrl": "https://data.bmkg.go.id/DataMKG/TEWS/gempaterkini.json",

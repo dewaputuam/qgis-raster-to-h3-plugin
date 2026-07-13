@@ -69,7 +69,7 @@ function StatGroup({ title, items }) {
   );
 }
 
-export default function ReportPanel({ events, isMobile, onOpenMap }) {
+export default function ReportPanel({ events, isMobile, onOpenMap, kabupatenScope }) {
   const total = events.length;
   const titikDampak = events.reduce((s, e) => s + (e.impacts || []).length, 0);
   const meninggal = events.reduce((s, e) => s + (e.korbanMeninggal || 0), 0);
@@ -84,7 +84,7 @@ export default function ReportPanel({ events, isMobile, onOpenMap }) {
   return (
     <div style={{ minWidth: 0 }}>
       <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--accent)', letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: 6 }}>
-        BPBD Bali {periodLabel(events) ? `· ${periodLabel(events)}` : ''}
+        BPBD {kabupatenScope || 'Bali'} {periodLabel(events) ? `· ${periodLabel(events)}` : ''}
       </div>
       <div style={{ fontSize: 12.5, color: 'var(--muted)', marginBottom: 6 }}>{lastUpdateLabel(events)}</div>
       <h1 style={{ fontSize: isMobile ? 26 : 34, fontWeight: 800, letterSpacing: '-0.01em', margin: '0 0 4px' }}>Ringkasan Laporan Kejadian</h1>
@@ -103,7 +103,11 @@ export default function ReportPanel({ events, isMobile, onOpenMap }) {
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 28, marginTop: 24, paddingTop: 20, borderTop: '1px solid var(--border)' }}>
-        <RankedBreakdown title="Kejadian per Kabupaten/Kota" counts={countBy(events, 'kabupaten')} />
+        {kabupatenScope ? (
+          <RankedBreakdown title={`Kejadian per Kecamatan (${kabupatenScope})`} counts={countBy(events, 'kecamatan')} />
+        ) : (
+          <RankedBreakdown title="Kejadian per Kabupaten/Kota" counts={countBy(events, 'kabupaten')} />
+        )}
         <RankedBreakdown title="Kejadian per Jenis Bencana" counts={countBy(events, 'jenisBencana')} colorFor={severityColor} />
       </div>
 

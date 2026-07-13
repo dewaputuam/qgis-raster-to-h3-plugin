@@ -11,11 +11,12 @@ const SOURCE_DEFS = {
 };
 
 const ALLOWED_INTERVALS = [1, 5, 15, 30, 60];
+const ALLOWED_RANGE_MONTHS = [1, 2, 3, 6];
 
 export default function AdminPanel({ events, regions, onOpenMap }) {
   const [sikStatus, setSikStatus] = useState({ loggedIn: false, username: null, tokenExpiresAt: null });
   const [sources, setSources] = useState([]);
-  const [fetchSettings, setFetchSettings] = useState({ sik: 15, cuaca: 15, gempa: 15 });
+  const [fetchSettings, setFetchSettings] = useState({ sik: 15, cuaca: 15, gempa: 15, sikRangeMonths: 3 });
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [rememberSession, setRememberSession] = useState(true);
@@ -71,10 +72,15 @@ export default function AdminPanel({ events, regions, onOpenMap }) {
     refresh();
   }
 
+  async function onRangeMonthsChange(months) {
+    await api.setSikRangeMonths(months);
+    refresh();
+  }
+
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 760;
 
   return (
-    <section style={{ maxWidth: 1100, margin: '0 auto', padding: isMobile ? '28px 20px 60px' : '48px 40px 80px' }}>
+    <section style={{ maxWidth: 1800, margin: '0 auto', padding: isMobile ? '28px 20px 60px' : '48px 48px 80px' }}>
       <div style={{ marginBottom: 24 }}>
         <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 8 }}>
           Internal &middot; Tim/Relawan
@@ -196,18 +202,37 @@ export default function AdminPanel({ events, regions, onOpenMap }) {
               )}
 
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', borderTop: '1px solid var(--border)', paddingTop: 12 }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11.5, fontWeight: 600, color: 'var(--muted)' }}>
-                  Interval
-                  <select
-                    value={interval}
-                    onChange={(e) => onIntervalChange(key, Number(e.target.value))}
-                    style={{ fontFamily: 'inherit', fontSize: 12, fontWeight: 600, color: 'var(--fg)', background: 'var(--card-bg)', border: '1px solid var(--border2)', borderRadius: 8, padding: '6px 8px', outline: 'none', cursor: 'pointer' }}
-                  >
-                    {ALLOWED_INTERVALS.map((m) => (
-                      <option key={m} value={m}>{m} menit</option>
-                    ))}
-                  </select>
-                </label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11.5, fontWeight: 600, color: 'var(--muted)' }}>
+                    Interval
+                    <select
+                      value={interval}
+                      onChange={(e) => onIntervalChange(key, Number(e.target.value))}
+                      style={{ fontFamily: 'inherit', fontSize: 12, fontWeight: 600, color: 'var(--fg)', background: 'var(--card-bg)', border: '1px solid var(--border2)', borderRadius: 8, padding: '6px 8px', outline: 'none', cursor: 'pointer' }}
+                    >
+                      {ALLOWED_INTERVALS.map((m) => (
+                        <option key={m} value={m}>{m} menit</option>
+                      ))}
+                    </select>
+                  </label>
+                  {key === 'sik' && (
+                    <label
+                      title="Seberapa jauh ke belakang data kejadian ditarik dari SIK (dihitung dari tanggal kejadian, diterapkan pada fetch berikutnya)"
+                      style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11.5, fontWeight: 600, color: 'var(--muted)' }}
+                    >
+                      Rentang Data
+                      <select
+                        value={ALLOWED_RANGE_MONTHS.includes(Number(fetchSettings.sikRangeMonths)) ? fetchSettings.sikRangeMonths : 3}
+                        onChange={(e) => onRangeMonthsChange(Number(e.target.value))}
+                        style={{ fontFamily: 'inherit', fontSize: 12, fontWeight: 600, color: 'var(--fg)', background: 'var(--card-bg)', border: '1px solid var(--border2)', borderRadius: 8, padding: '6px 8px', outline: 'none', cursor: 'pointer' }}
+                      >
+                        {ALLOWED_RANGE_MONTHS.map((m) => (
+                          <option key={m} value={m}>{m} bulan terakhir</option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
+                </div>
                 <button
                   disabled={disabledFetch}
                   onClick={() => onFetchNow(key)}

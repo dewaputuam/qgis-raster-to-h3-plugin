@@ -139,7 +139,18 @@ async function mapWithConcurrency(items, limit, fn) {
   return results;
 }
 
-export async function fetchAllEvents(token, { getPreviousImpacts } = {}) {
+// The guide itself says server-side date filtering on this API is
+// unreliable ("filter tanggal via parameter query kadang tidak konsisten di
+// sisi server") and should be done client-side after the full list comes
+// back - this does that, comparing DATE_KEJ strings (YYYY-MM-DD, so a plain
+// string comparison works) against a cutoff N months back.
+function cutoffDateString(rangeMonths) {
+  const cutoff = new Date();
+  cutoff.setMonth(cutoff.getMonth() - rangeMonths);
+  return cutoff.toISOString().slice(0, 10);
+}
+
+export async function fetchAllEvents(token, { getPreviousImpacts, rangeMonths } = {}) {
   const kabkotaEntries = Object.entries(config.kabkotaIds);
   let loggedListSample = false;
   const results = await Promise.all(
@@ -158,7 +169,12 @@ export async function fetchAllEvents(token, { getPreviousImpacts } = {}) {
       return items.map((raw) => mapKejadian(raw, kabupatenName));
     })
   );
-  const events = results.flat();
+  let events = results.flat();
+
+  if (rangeMonths) {
+    const cutoff = cutoffDateString(rangeMonths);
+    events = events.filter((ev) => !ev.tanggal || ev.tanggal >= cutoff);
+  }
 
   let loggedSample = false;
   await mapWithConcurrency(events, 8, async (ev) => {

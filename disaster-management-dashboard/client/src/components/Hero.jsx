@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { severityColor } from '../theme.js';
 import { DisasterIcon, WeatherIcon } from '../icons.jsx';
 import { formatRupiah } from '../lib/format.js';
+import ImpactReportList from './ImpactReportList.jsx';
 
 function ForecastRow({ weather }) {
   if (!weather || !weather.cuaca || weather.cuaca.length < 2) return null;
@@ -58,7 +59,6 @@ export default function Hero({ events, weather, onOpenMap, isMobile }) {
   const totalKorban = impacts.reduce((s, im) => s + (im.totalKorban || 0), 0) || ev.korbanMeninggal + ev.korbanLuka + ev.korbanHilang;
   const totalMengungsi = impacts.reduce((s, im) => s + (im.mengungsiL || 0) + (im.mengungsiP || 0), 0);
   const totalKerugian = impacts.reduce((s, im) => s + (im.totalKerugian || 0), 0) || ev.kerugian || 0;
-  const upaya = impacts.map((im) => im.penangananTindakan).filter(Boolean).join('; ');
 
   return (
     <div style={{ width: isMobile ? '100%' : 340, flexShrink: 0 }}>
@@ -139,13 +139,10 @@ export default function Hero({ events, weather, onOpenMap, isMobile }) {
           <Chip>💸 {formatRupiah(totalKerugian)}</Chip>
         </div>
 
-        {upaya && (
-          <>
-            <div style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.02em', margin: '10px 0 4px' }}>
-              Upaya Penanganan
-            </div>
-            <div style={{ fontSize: 12, color: 'var(--fg2)', lineHeight: 1.5 }}>{upaya}</div>
-          </>
+        {impacts.length > 0 && (
+          <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+            <ImpactReportList impacts={impacts} />
+          </div>
         )}
 
         <button

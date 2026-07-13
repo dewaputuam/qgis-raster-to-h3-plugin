@@ -124,6 +124,13 @@ because the token hasn't refreshed yet) — only a different account logging in 
 scope. A small "📍 Kabupaten" badge in the header (and a note in the login card) shows when
 this is active, so it's clear why the data looks narrower than "all of Bali".
 
+Two report labels adapt when a scope is active, since "which kabupaten had the most
+events" is meaningless once every event already belongs to the same one:
+- The report header reads "BPBD `<Kabupaten>`" instead of "BPBD Bali".
+- The "Kejadian per Kabupaten/Kota" ranking becomes "Kejadian per Kecamatan
+  (`<Kabupaten>`)" — a breakdown by sub-district within that kabupaten instead, which is
+  the more useful drill-down once the kabupaten itself is fixed.
+
 ### Token expiry: "Ingat sesi ini" (opt-in auto-relogin)
 
 The SIK access guide explicitly says not to silently retry login on auth failure — by
@@ -144,6 +151,17 @@ login to turn auto-relogin back on). If the stored credentials themselves stop w
 If you'd rather not store the password at all, even encrypted, leave the checkbox
 unchecked — everything else works the same, you'll just need to re-enter the password
 whenever the token expires.
+
+### How far back to fetch ("Rentang Data")
+
+The SIK source card in Kelola Data has a "Rentang Data" select (1/2/3/6 bulan terakhir,
+default 3) alongside the fetch interval. The guide notes that server-side date filtering on
+this API is unreliable ("filter tanggal via parameter query kadang tidak konsisten di sisi
+server"), so like the guide's own recommended approach, this is applied **after** the full
+list comes back from SIK (`cutoffDateString` in `server/lib/sik.js`, comparing `DATE_KEJ`
+strings against N months back) rather than as a query parameter. It only limits what a
+*new* fetch pulls in — narrowing the range doesn't delete events already stored from a
+previous, wider-range fetch. Takes effect on the next scheduled or manual fetch.
 
 ## New-event notifications
 
