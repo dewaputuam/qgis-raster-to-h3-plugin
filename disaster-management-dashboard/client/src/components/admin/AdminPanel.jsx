@@ -38,7 +38,11 @@ export default function AdminPanel({ events, regions, onOpenMap }) {
 
   async function onLogin(e) {
     e.preventDefault();
-    if (!username.trim() || !password.trim()) { setLoginError('Username dan password wajib diisi.'); return; }
+    // No client-side "required" gate: whatever's typed (including blank) goes
+    // straight to the real SIK login call, and success is judged purely by
+    // whether that call actually returns a token (see sikLogin/SikAuthError
+    // in server/lib/sik.js) - not by any guess here about what a valid
+    // username/password should look like.
     setLoginLoading(true);
     setLoginError(null);
     try {

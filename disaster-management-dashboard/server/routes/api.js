@@ -70,8 +70,11 @@ router.post('/admin/sources/:key/interval', async (req, res) => {
 });
 
 router.post('/admin/sik/login', async (req, res) => {
-  const { username, password, rememberSession } = req.body || {};
-  if (!username || !password) return res.status(400).json({ error: 'Username dan password wajib diisi.' });
+  // No "required" pre-check here: whatever's submitted (including blank)
+  // goes straight to the real SIK login call below, and success is judged
+  // purely by whether that call actually returns a token - not by any
+  // guess here about what a valid username/password should look like.
+  const { username = '', password = '', rememberSession } = req.body || {};
   try {
     const { token } = await sikLogin(username, password);
     const tokenExpiresAt = Date.now() + config.sikTokenTtlMinutes * 60000;

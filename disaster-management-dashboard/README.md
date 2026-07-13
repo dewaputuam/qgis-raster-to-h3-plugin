@@ -100,6 +100,12 @@ with this app). On success:
 - the token is kept in the local SQLite file only (not on disk anywhere else) and used to
   poll `GET /lap-kejadian` for every kabupaten on the configured interval
 
+There's no "username/password required" pre-check anywhere in this flow, client or
+server — whatever's typed (including blank) goes straight to the real SIK login call, and
+"logged in" is decided purely by whether that call actually returns a token (see
+`sikLogin()` in `server/lib/sik.js`). A blank or wrong login just surfaces whatever the
+real API said (wrong credentials, unreachable, etc.) instead of a canned local message.
+
 ### Token expiry: "Ingat sesi ini" (opt-in auto-relogin)
 
 The SIK access guide explicitly says not to silently retry login on auth failure — by
