@@ -53,11 +53,22 @@ function periodLabel(events) {
   return dt.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' }).toUpperCase();
 }
 
-function StatGroup({ title, items }) {
+// oneRow forces exactly `items.length` equal columns (shrinking instead of
+// wrapping) so the group never breaks into a lopsided 4+1-style second row -
+// only worth it on wide-enough screens, so mobile keeps the wrap-friendly
+// auto-fit behavior instead of squeezing everything into unreadably narrow
+// columns.
+function StatGroup({ title, items, oneRow, isMobile }) {
   return (
     <div style={{ marginBottom: 14 }}>
       <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.03em', marginBottom: 10 }}>{title}</div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 10 }}>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: oneRow && !isMobile ? `repeat(${items.length}, 1fr)` : 'repeat(auto-fit, minmax(120px, 1fr))',
+          gap: 10,
+        }}
+      >
         {items.map(([value, label]) => (
           <div key={label} style={{ border: '1px solid var(--border)', borderRadius: 12, padding: '12px 14px', background: 'var(--band)' }}>
             <div style={{ fontSize: 20, fontWeight: 800 }}>{value}</div>
@@ -111,6 +122,8 @@ export default function ReportPanel({ events, isMobile, onOpenMap, kabupatenScop
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 20 }}>
           <StatGroup
             title="Korban"
+            isMobile={isMobile}
+            oneRow
             items={[
               [meninggal, '☠ Meninggal'],
               [lukaBerat, '🩹 Luka berat'],
