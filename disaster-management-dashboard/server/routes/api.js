@@ -96,8 +96,12 @@ router.post('/admin/sources/:key/interval', async (req, res) => {
 
 // How far back to pull SIK events from (the guide notes server-side date
 // filtering on this API is unreliable, so it's applied to the fetched list
-// afterward - see fetchAllEvents in lib/sik.js). Takes effect on the next
-// scheduled or manual SIK fetch, not retroactively.
+// afterward - see fetchAllEvents in lib/sik.js). Unlike the interval route
+// above, this used to just save the setting with no re-fetch - the operator
+// would change it, see the "Data Ditarik" count stay exactly the same, and
+// have no way to tell whether it had taken effect short of separately
+// hitting "Fetch Sekarang". Now triggers an immediate fetch under the new
+// range, same as changing the interval already did.
 router.post('/admin/sik/range-months', (req, res) => {
   const months = Number(req.body?.months);
   if (!config.allowedSikRangeMonthsOptions.includes(months)) {
@@ -105,6 +109,7 @@ router.post('/admin/sik/range-months', (req, res) => {
   }
   const admin = db.getAdminConfig();
   db.setFetchSettings({ ...admin.fetchSettings, sikRangeMonths: months });
+  scheduleSourceFetch('sik');
   res.json({ ok: true });
 });
 

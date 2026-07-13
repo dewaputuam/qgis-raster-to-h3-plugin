@@ -177,7 +177,11 @@ server"), so like the guide's own recommended approach, this is applied **after*
 list comes back from SIK (`cutoffDateString` in `server/lib/sik.js`, comparing `DATE_KEJ`
 strings against N months back) rather than as a query parameter. It only limits what a
 *new* fetch pulls in — narrowing the range doesn't delete events already stored from a
-previous, wider-range fetch. Takes effect on the next scheduled or manual fetch.
+previous, wider-range fetch. Changing the select triggers an immediate fetch under the new
+range (same as changing the interval already did) - it used to just save the setting with no
+re-fetch, so the "Data Ditarik" count would silently stay exactly the same until the operator
+separately hit "Fetch Sekarang" or the next scheduled run, which looked like the range setting
+wasn't doing anything at all.
 
 ### Following SIK's pagination (not just page 1)
 
