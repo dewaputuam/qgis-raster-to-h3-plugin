@@ -20,6 +20,7 @@ export default function App() {
   const [quakes, setQuakes] = useState([]);
   const [weather, setWeather] = useState(null);
   const [mapFocusUuid, setMapFocusUuid] = useState(null);
+  const [kabupatenScope, setKabupatenScope] = useState(null);
   const [width, setWidth] = useState(() => window.innerWidth);
   const isMobile = width < 760;
 
@@ -51,6 +52,19 @@ export default function App() {
     }, 30000);
     return () => clearInterval(t);
   }, [refreshEvents, refreshQuakes, refreshWeather]);
+
+  useEffect(() => {
+    // A kabupaten-office SIK account (as opposed to a provincial "bidang"
+    // one) scopes every data endpoint server-side to just that kabupaten -
+    // this just polls for the badge shown here in the header, the actual
+    // filtering already happened before events/regions reached this app.
+    function refreshScope() {
+      api.sikStatus().then((s) => setKabupatenScope(s.kabupatenScope || null)).catch(() => {});
+    }
+    refreshScope();
+    const t = setInterval(refreshScope, 10000);
+    return () => clearInterval(t);
+  }, []);
 
   useEffect(() => {
     document.body.style.background = darkMode ? 'oklch(16% 0.014 260)' : 'oklch(98.5% 0.004 250)';
@@ -88,9 +102,9 @@ export default function App() {
       >
         <div
           style={{
-            maxWidth: 1280,
+            maxWidth: 1800,
             margin: '0 auto',
-            padding: '12px 24px',
+            padding: '12px 48px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
@@ -129,6 +143,17 @@ export default function App() {
             </span>
           </button>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {kabupatenScope && (
+              <span
+                title="Akun SIK yang login adalah akun kabupaten - semua data (Publik, Peta, Kelola Data) otomatis difilter ke kabupaten ini"
+                style={{
+                  fontSize: 11, fontWeight: 700, color: 'var(--accent)', background: 'var(--accent-08)',
+                  borderRadius: 999, padding: '6px 12px', whiteSpace: 'nowrap',
+                }}
+              >
+                📍 {kabupatenScope}
+              </span>
+            )}
             <div style={{ display: 'flex', gap: 4, padding: 4, background: 'var(--band)', borderRadius: 999 }}>
               <ToggleBtn active={view === 'public'} onClick={() => setView('public')}>Publik</ToggleBtn>
               <ToggleBtn active={mapPanelOpen} onClick={() => setMapPanelOpen((v) => !v)}>Peta</ToggleBtn>

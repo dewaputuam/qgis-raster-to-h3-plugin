@@ -114,6 +114,11 @@ export default function AdminPanel({ events, regions, onOpenMap }) {
                 Token kedaluwarsa dalam {formatCountdown(sikStatus.tokenExpiresAt, now)}
                 {sikStatus.rememberSession && ' — akan login otomatis'}
               </div>
+              {sikStatus.kabupatenScope && (
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)', marginTop: 2 }}>
+                  📍 Akun kabupaten terdeteksi: data di halaman Publik, Peta, dan Kelola Data otomatis difilter ke {sikStatus.kabupatenScope} saja.
+                </div>
+              )}
             </div>
             <button
               onClick={onLogout}

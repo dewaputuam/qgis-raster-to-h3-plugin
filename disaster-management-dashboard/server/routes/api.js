@@ -7,8 +7,21 @@ import { scheduleSourceFetch, onIntervalChange } from '../lib/scheduler.js';
 import { fetchCuaca } from '../lib/bmkg.js';
 import { encrypt } from '../lib/crypto.js';
 import { isPointInKabupaten } from '../lib/kabupatenPolygons.js';
+import { detectKabupatenScope } from '../lib/kabupatenScope.js';
 
 export const router = Router();
+
+// A logged-in kabupaten-office account (e.g. username "buleleng") scopes
+// every data endpoint to just that kabupaten instead of all of Bali - see
+// detectKabupatenScope for what counts as a kabupaten account vs. a
+// provincial "bidang" one. Derived fresh from the stored username each call
+// (no separate flag to keep in sync), and persists across a token expiring
+// (an install's identity shouldn't flip back to "all of Bali" just because
+// the token hasn't refreshed yet) - only a different account logging in
+// changes it.
+function currentKabupatenScope() {
+  return detectKabupatenScope(db.getAdminConfig().username);
+}
 
 router.get('/quakes', (req, res) => {
   res.json({ data: db.getLatestQuakes() });
@@ -41,18 +54,22 @@ router.get('/weather/lookup', async (req, res) => {
 
 router.get('/events', (req, res) => {
   const { start, end } = req.query;
-  const events = db.getEvents({ start, end }).map((ev) => ({
+  const scope = currentKabupatenScope();
+  let events = db.getEvents({ start, end }).map((ev) => ({
     ...ev,
     // true/false = checked against the real kabupaten polygon; null = the
     // event's kabupaten/coordinates couldn't be checked (unrecognized name
     // or missing lat/lng) - the client falls back to its own heuristic then.
     locationValid: isPointInKabupaten(ev.kabupaten, ev.lat, ev.lng),
   }));
+  if (scope) events = events.filter((ev) => ev.kabupaten === scope);
   res.json({ data: events });
 });
 
 router.get('/regions', (req, res) => {
-  res.json({ data: db.getRegions() });
+  const scope = currentKabupatenScope();
+  const regions = scope ? db.getRegions().filter((r) => r.kabupaten === scope) : db.getRegions();
+  res.json({ data: regions });
 });
 
 router.get('/admin/sources', (req, res) => {
@@ -117,6 +134,7 @@ router.get('/admin/sik/status', (req, res) => {
     username: admin.username || null,
     tokenExpiresAt: loggedIn ? admin.tokenExpiresAt : null,
     rememberSession: !!admin.passwordEnc,
+    kabupatenScope: detectKabupatenScope(admin.username),
   });
 });
 

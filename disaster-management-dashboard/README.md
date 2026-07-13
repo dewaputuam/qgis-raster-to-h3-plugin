@@ -106,6 +106,24 @@ server — whatever's typed (including blank) goes straight to the real SIK logi
 `sikLogin()` in `server/lib/sik.js`). A blank or wrong login just surfaces whatever the
 real API said (wrong credentials, unreachable, etc.) instead of a canned local message.
 
+### Kabupaten-office accounts auto-scope every view
+
+BPBD's "bidang" (provincial division) accounts are meant to see all of Bali, but an
+individual kabupaten office's own SIK account (username containing that kabupaten's name,
+e.g. `buleleng`, `admin_denpasar`, `kabupaten.badung`) only cares about its own jurisdiction.
+`server/lib/kabupatenScope.js` (`detectKabupatenScope`) checks the logged-in username
+against the nine kabupaten/kota names on a whole-word basis (so it won't misfire on
+something like `bidang1`) — when it matches, `GET /api/events` and `GET /api/regions` both
+filter server-side to just that kabupaten. Since the public page, map, and admin panel's
+event table all read from those same two endpoints, this one change scopes all three at
+once with nothing extra needed downstream.
+
+This is derived fresh from the stored username on every request rather than a separate
+flag, and persists across a token expiring (the office's identity doesn't change just
+because the token hasn't refreshed yet) — only a different account logging in changes the
+scope. A small "📍 Kabupaten" badge in the header (and a note in the login card) shows when
+this is active, so it's clear why the data looks narrower than "all of Bali".
+
 ### Token expiry: "Ingat sesi ini" (opt-in auto-relogin)
 
 The SIK access guide explicitly says not to silently retry login on auth failure — by
