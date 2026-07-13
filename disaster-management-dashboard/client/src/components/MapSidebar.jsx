@@ -1,7 +1,8 @@
 import { useMemo } from 'react';
 import { severityColor } from '../theme.js';
 import { DisasterIcon, ChevronIcon } from '../icons.jsx';
-import { formatRupiah } from '../lib/format.js';
+import { formatRupiah, formatCoord } from '../lib/format.js';
+import { isLocationValid } from '../lib/locationValidity.js';
 
 const JENIS_OPTIONS = [
   'Kebakaran Gedung dan Permukiman',
@@ -107,6 +108,7 @@ export default function MapSidebar({
             {sorted.map((ev) => {
               const color = severityColor(ev.jenisBencana);
               const active = ev.uuid === selectedUuid;
+              const unverified = !isLocationValid(ev);
               return (
                 <button
                   key={ev.uuid}
@@ -121,9 +123,25 @@ export default function MapSidebar({
                     <DisasterIcon jenis={ev.jenisBencana} width={14} height={14} stroke="white" />
                   </span>
                   <span style={{ minWidth: 0, flex: 1 }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--fg)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{ev.jenisBencana}</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--fg)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{ev.jenisBencana}</span>
+                      {unverified && (
+                        <span
+                          title="Lokasi belum terverifikasi - perlu dicek manual"
+                          style={{
+                            flexShrink: 0, width: 14, height: 14, borderRadius: '50%', background: 'oklch(70% 0.17 60)',
+                            color: 'white', fontSize: 9, fontWeight: 800, lineHeight: '14px', textAlign: 'center',
+                          }}
+                        >
+                          ?
+                        </span>
+                      )}
+                    </div>
                     <div style={{ fontSize: 10.5, color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {ev.tanggal} &middot; {ev.kecamatan}, {ev.kabupaten}
+                    </div>
+                    <div style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'monospace', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {formatCoord(ev.lat, ev.lng)}
                     </div>
                   </span>
                   <ChevronIcon pointRight={active} />

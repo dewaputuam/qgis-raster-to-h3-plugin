@@ -5,34 +5,10 @@ import { disasterMarkerSvgHtml, Icon, ExpandIcon, LegendIcon, DisasterIcon } fro
 import MapSidebar from './MapSidebar.jsx';
 import EventDetailCard from './EventDetailCard.jsx';
 import EventMarquee from './EventMarquee.jsx';
-import { isWithinKabupatenBounds } from '../lib/kabupatenBounds.js';
+import { isLocationValid, isWithinBaliBounds } from '../lib/locationValidity.js';
+import { formatCoord } from '../lib/format.js';
 
 const BALI_CENTER = [-8.4, 115.15];
-
-function isWithinBaliBounds(lat, lng) {
-  return Number.isFinite(lat) && Number.isFinite(lng) && lat <= -7.8 && lat >= -9.0 && lng >= 114.0 && lng <= 116.0;
-}
-
-// "Valid" means both inside Bali at all AND inside the specific kabupaten the
-// event claims to be in - catches a coordinate that's technically within
-// Bali but doesn't match its own reported kabupaten.
-//
-// This is deliberately a coordinate check, not a kecamatan/kabupaten label
-// check: SIK's own kecamatan and kabupaten fields are always internally
-// consistent with each other (they resolve from mapKejadian server-side), so
-// a label-consistency check would pass 100% of events regardless of whether
-// the lat/lng is actually wrong - which is the real thing this panel exists
-// to catch (e.g. a bad map pin, or a corrupted coordinate).
-//
-// The server computes ev.locationValid against real kabupaten boundary
-// polygons (server/lib/kabupatenPolygons.js) - true/false when it could
-// check, null when the kabupaten name wasn't recognized. Only fall back to
-// the coarse hand-estimated bounding box in that null case.
-function isLocationValid(ev) {
-  if (!isWithinBaliBounds(ev.lat, ev.lng)) return false;
-  if (ev.locationValid !== null && ev.locationValid !== undefined) return ev.locationValid;
-  return isWithinKabupatenBounds(ev.kabupaten, ev.lat, ev.lng);
-}
 
 export default function MapPanel({ open, events, regions, focusUuid, isMobile, onClose }) {
   const panelRef = useRef(null);
@@ -306,6 +282,7 @@ export default function MapPanel({ open, events, regions, focusUuid, isMobile, o
                       >
                         <div style={{ fontWeight: 700 }}>{ev.jenisBencana}</div>
                         <div style={{ color: 'var(--fg2)' }}>{ev.tanggal} &middot; {ev.kecamatan}, {ev.kabupaten}</div>
+                        <div style={{ color: 'var(--muted)', fontFamily: 'monospace', fontSize: 10.5, marginTop: 2 }}>{formatCoord(ev.lat, ev.lng)}</div>
                         <div style={{ color: 'oklch(58% 0.18 30)', marginTop: 2 }}>{reason}</div>
                       </button>
                     );

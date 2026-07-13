@@ -32,3 +32,10 @@ export function formatDateTime(ts) {
   const timePart = d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   return `${datePart}, ${timePart}`;
 }
+
+// 4 decimal places (~11m precision) - plenty for a human cross-checking a
+// pin against the real coordinate, without the noise of full float precision.
+export function formatCoord(lat, lng) {
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return 'Tidak ada koordinat';
+  return `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+}
