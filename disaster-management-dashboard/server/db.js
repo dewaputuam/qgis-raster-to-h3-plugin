@@ -91,6 +91,12 @@ if (!adminConfigCols.includes('password_enc')) {
   db.exec('ALTER TABLE admin_config ADD COLUMN password_enc TEXT');
 }
 
+// Same idea: source_status predates the fetch-progress bar.
+const sourceStatusCols = db.prepare("PRAGMA table_info(source_status)").all().map((c) => c.name);
+if (!sourceStatusCols.includes('progress_json')) {
+  db.exec('ALTER TABLE source_status ADD COLUMN progress_json TEXT');
+}
+
 db.prepare(`INSERT INTO notification_queue (id, events_json) VALUES (1, '[]') ON CONFLICT(id) DO NOTHING`).run();
 
 for (const key of Object.keys(config.fetchIntervalsMinutes)) {
@@ -232,6 +238,9 @@ export function getSourceStatus(key) {
     nextFetch: row.next_fetch,
     count: row.count,
     error: row.error,
+    // { phase: 'list'|'impacts', current, total } while a fetch is running -
+    // null the rest of the time (not meaningful once status isn't 'loading').
+    progress: row.progress_json ? JSON.parse(row.progress_json) : null,
   };
 }
 
@@ -240,12 +249,26 @@ export function getAllSourceStatus() {
 }
 
 export function setSourceStatus(key, patch) {
-  const cur = getSourceStatus(key) || { key, status: 'idle', lastFetch: null, nextFetch: null, count: null, error: null };
+  const cur = getSourceStatus(key) || { key, status: 'idle', lastFetch: null, nextFetch: null, count: null, error: null, progress: null };
   const next = { ...cur, ...patch };
+  // node:sqlite throws on named params not referenced in the SQL (unlike
+  // better-sqlite3, which ignores extras) - bind exactly the columns used,
+  // not a spread of `next` (which carries `progress`, the object, while the
+  // column is `progressJson`, the serialized string).
   db.prepare(`
-    INSERT INTO source_status (key, status, last_fetch, next_fetch, count, error) VALUES (@key, @status, @lastFetch, @nextFetch, @count, @error)
-    ON CONFLICT(key) DO UPDATE SET status=excluded.status, last_fetch=excluded.last_fetch, next_fetch=excluded.next_fetch, count=excluded.count, error=excluded.error
-  `).run(next);
+    INSERT INTO source_status (key, status, last_fetch, next_fetch, count, error, progress_json)
+      VALUES (@key, @status, @lastFetch, @nextFetch, @count, @error, @progressJson)
+    ON CONFLICT(key) DO UPDATE SET status=excluded.status, last_fetch=excluded.last_fetch, next_fetch=excluded.next_fetch,
+      count=excluded.count, error=excluded.error, progress_json=excluded.progress_json
+  `).run({
+    key: next.key,
+    status: next.status,
+    lastFetch: next.lastFetch,
+    nextFetch: next.nextFetch,
+    count: next.count,
+    error: next.error,
+    progressJson: next.progress ? JSON.stringify(next.progress) : null,
+  });
   return next;
 }
 

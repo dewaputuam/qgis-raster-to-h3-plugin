@@ -32,9 +32,26 @@ export default function AdminPanel({ events, regions, onOpenMap }) {
 
   useEffect(() => {
     refresh();
-    const poll = setInterval(refresh, 4000);
+    // Poll faster while any source is actively fetching so the progress bar
+    // moves smoothly instead of jumping every 4s - back off to the normal
+    // cadence once nothing's loading.
+    let cancelled = false;
+    let timer;
+    async function poll() {
+      const [statusRes, sourcesRes] = await Promise.all([
+        api.sikStatus().catch(() => null),
+        api.getSources().catch(() => null),
+      ]);
+      if (cancelled) return;
+      if (statusRes) setSikStatus(statusRes);
+      const anyLoading = sourcesRes && sourcesRes.data.some((s) => s.status === 'loading');
+      if (sourcesRes) setSources(sourcesRes.data);
+      timer = setTimeout(poll, anyLoading ? 700 : 4000);
+    }
+    poll();
+    api.getFetchSettings().then((r) => setFetchSettings(r.data)).catch(() => {});
     const tick = setInterval(() => setNow(Date.now()), 1000);
-    return () => { clearInterval(poll); clearInterval(tick); };
+    return () => { cancelled = true; clearTimeout(timer); clearInterval(tick); };
   }, []);
 
   async function onLogin(e) {
@@ -195,6 +212,8 @@ export default function AdminPanel({ events, regions, onOpenMap }) {
                 <Stat label="Fetch Berikutnya" value={key === 'sik' && !sikStatus.loggedIn ? '—' : formatCountdown(st.nextFetch, now)} />
               </div>
 
+              {st.status === 'loading' && st.progress && <FetchProgressBar progress={st.progress} />}
+
               {st.error && (
                 <div style={{ fontSize: 12, fontWeight: 600, color: 'oklch(55% 0.18 25)', background: 'oklch(55% 0.18 25 / 0.1)', border: '1px solid oklch(55% 0.18 25 / 0.3)', borderRadius: 8, padding: '8px 10px' }}>
                   {st.error}
@@ -271,6 +290,32 @@ function Stat({ label, value }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 90 }}>
       <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.03em', color: 'var(--muted)' }}>{label}</div>
       <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--fg2)' }}>{value}</div>
+    </div>
+  );
+}
+
+const PROGRESS_PHASE_LABEL = {
+  list: 'Mengambil daftar kejadian',
+  impacts: 'Mengambil detail dampak',
+};
+
+// Two-phase progress (list = per kabupaten queried, impacts = per event's
+// detail fetch) so the operator can see it's actually working through a
+// known amount of data, not just a spinner - and how many kabupaten/events
+// specifically, since that's what "67 item" turned out to need visibility
+// into (nothing was capping it, page 2+ just hadn't been fetched yet).
+function FetchProgressBar({ progress }) {
+  const { phase, current, total } = progress;
+  const pct = total > 0 ? Math.round((current / total) * 100) : 0;
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, fontWeight: 600, color: 'var(--muted)', marginBottom: 4 }}>
+        <span>{PROGRESS_PHASE_LABEL[phase] || 'Mengambil data'}…</span>
+        <span>{current}/{total} &middot; {pct}%</span>
+      </div>
+      <div style={{ height: 6, borderRadius: 999, background: 'var(--band)', overflow: 'hidden' }}>
+        <div style={{ height: '100%', width: `${pct}%`, background: 'var(--accent-strong)', borderRadius: 999, transition: 'width .3s ease' }} />
+      </div>
     </div>
   );
 }

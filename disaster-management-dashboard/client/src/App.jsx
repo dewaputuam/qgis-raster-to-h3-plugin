@@ -205,7 +205,7 @@ export default function App() {
 
       {view === 'admin' && <AdminPanel events={events} regions={regions} onOpenMap={jumpToEventOnMap} />}
 
-      <MapPanel open={mapPanelOpen} events={events} regions={regions} focusUuid={mapFocusUuid} isMobile={isMobile} onClose={() => setMapPanelOpen(false)} />
+      <MapPanel open={mapPanelOpen} events={events} regions={regions} focusUuid={mapFocusUuid} isMobile={isMobile} kabupatenScope={kabupatenScope} onClose={() => setMapPanelOpen(false)} />
       <NewEventsNotification onOpenMap={jumpToEventOnMap} />
     </div>
   );

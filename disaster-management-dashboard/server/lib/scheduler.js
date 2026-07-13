@@ -63,20 +63,23 @@ async function runFetch(key) {
       return;
     }
   }
-  db.setSourceStatus(key, { status: 'loading', error: null });
+  db.setSourceStatus(key, { status: 'loading', error: null, progress: null });
   try {
     let count = 0;
     if (key === 'sik') {
       let admin = db.getAdminConfig();
       const rangeMonths = getSikRangeMonths();
       const kabupatenScope = detectKabupatenScope(admin.username);
+      // Drives the progress bar in Kelola Data - "list" phase is per
+      // kabupaten queried, "impacts" phase is per event's detail fetch.
+      const onProgress = (progress) => db.setSourceStatus('sik', { status: 'loading', progress });
       let events;
       try {
-        events = await fetchAllEvents(admin.token, { getPreviousImpacts: db.getEventImpacts, rangeMonths, kabupatenScope });
+        events = await fetchAllEvents(admin.token, { getPreviousImpacts: db.getEventImpacts, rangeMonths, kabupatenScope, onProgress });
       } catch (err) {
         if (!(err instanceof SikAuthError) || !(await attemptSikRelogin())) throw err;
         admin = db.getAdminConfig();
-        events = await fetchAllEvents(admin.token, { getPreviousImpacts: db.getEventImpacts, rangeMonths, kabupatenScope });
+        events = await fetchAllEvents(admin.token, { getPreviousImpacts: db.getEventImpacts, rangeMonths, kabupatenScope, onProgress });
       }
       const existingUuids = db.getAllEventUuids();
       const newOnes = events
@@ -96,15 +99,15 @@ async function runFetch(key) {
     }
     const now = Date.now();
     const intervalMin = getIntervalMinutes(key);
-    db.setSourceStatus(key, { status: 'ok', lastFetch: now, nextFetch: now + intervalMin * 60000, count, error: null });
+    db.setSourceStatus(key, { status: 'ok', lastFetch: now, nextFetch: now + intervalMin * 60000, count, error: null, progress: null });
     armTimer(key, intervalMin);
   } catch (err) {
     if (err instanceof SikAuthError) {
       db.clearAdminToken();
-      db.setSourceStatus('sik', { status: 'unauth', nextFetch: null, error: 'Token kadaluarsa, silakan login kembali.' });
+      db.setSourceStatus('sik', { status: 'unauth', nextFetch: null, error: 'Token kadaluarsa, silakan login kembali.', progress: null });
       return;
     }
-    db.setSourceStatus(key, { status: 'error', nextFetch: null, error: err.message || String(err) });
+    db.setSourceStatus(key, { status: 'error', nextFetch: null, error: err.message || String(err), progress: null });
     // No auto-retry on error, matching the reference behavior - operator must
     // hit "Fetch Sekarang" or change the interval.
   }

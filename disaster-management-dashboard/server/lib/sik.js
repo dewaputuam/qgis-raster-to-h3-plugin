@@ -176,7 +176,39 @@ async function fetchWithRetry(url, options, { maxRetries = 3 } = {}) {
   }
 }
 
-export async function fetchAllEvents(token, { getPreviousImpacts, rangeMonths, kabupatenScope } = {}) {
+// The list endpoint looks like a standard Laravel paginate() response
+// (`data.data` = the page's items, alongside `current_page`/`last_page`/
+// `total`) wrapped in this app's own `data` envelope. Requesting
+// per_page=200 doesn't guarantee SIK actually honors that per_page value or
+// returns everything on one page - so this follows current_page/last_page
+// and fetches every page instead of silently keeping only page 1. A count
+// that looked suspicious (e.g. "67 item") turned out to be exactly this:
+// nothing enforces a row cap in this app, but page 2+ was never requested.
+async function fetchKejadianPage(kabkotaId, token, page) {
+  const res = await fetchWithRetry(`${config.sikBaseUrl}/lap-kejadian?kabkota=${kabkotaId}&per_page=200&page=${page}`, {
+    headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
+  });
+  if (res.status === 401) throw new SikAuthError('Token SIK kedaluwarsa atau tidak valid.');
+  if (!res.ok) throw new Error(`SIK lap-kejadian HTTP ${res.status} (kabkota=${kabkotaId}, page=${page})`);
+  const body = await res.json();
+  const paged = body && body.data;
+  const items = (paged && paged.data) || [];
+  const lastPage = (paged && paged.last_page) || 1;
+  return { items, lastPage };
+}
+
+async function fetchAllKejadianForKabkota(kabkotaId, kabupatenName, token, { onListSample } = {}) {
+  const { items: firstPageItems, lastPage } = await fetchKejadianPage(kabkotaId, token, 1);
+  if (onListSample && firstPageItems.length > 0) onListSample(kabkotaId, kabupatenName, firstPageItems[0], lastPage);
+  let allItems = firstPageItems;
+  for (let page = 2; page <= lastPage; page++) {
+    const { items } = await fetchKejadianPage(kabkotaId, token, page);
+    allItems = allItems.concat(items);
+  }
+  return allItems.map((raw) => mapKejadian(raw, kabupatenName));
+}
+
+export async function fetchAllEvents(token, { getPreviousImpacts, rangeMonths, kabupatenScope, onProgress } = {}) {
   const allEntries = Object.entries(config.kabkotaIds);
   // A kabupaten-office account only ever needs its own kabupaten's data -
   // pulling all nine (then discarding 8/9 of it at read time via the scope
@@ -187,23 +219,22 @@ export async function fetchAllEvents(token, { getPreviousImpacts, rangeMonths, k
     ? allEntries.filter(([name]) => name === kabupatenScope)
     : allEntries;
   let loggedListSample = false;
+  let listDone = 0;
   const results = await Promise.all(
     kabkotaEntries.map(async ([kabupatenName, id], i) => {
       // Stagger the start of each request slightly instead of firing all of
       // them in the same instant - still concurrent, just not a single burst.
       await sleep(i * 250);
-      const res = await fetchWithRetry(`${config.sikBaseUrl}/lap-kejadian?kabkota=${id}&per_page=200`, {
-        headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
+      const mapped = await fetchAllKejadianForKabkota(id, kabupatenName, token, {
+        onListSample: (kabkotaId, name, sample, lastPage) => {
+          if (loggedListSample) return;
+          loggedListSample = true;
+          console.log(`[sik] sample raw list item (kabkota=${kabkotaId}, expected kabupaten=${name}, last_page=${lastPage}):`, JSON.stringify(sample, null, 2));
+        },
       });
-      if (res.status === 401) throw new SikAuthError('Token SIK kedaluwarsa atau tidak valid.');
-      if (!res.ok) throw new Error(`SIK lap-kejadian HTTP ${res.status} (kabkota=${id})`);
-      const body = await res.json();
-      const items = (body && body.data && body.data.data) || [];
-      if (!loggedListSample && items.length > 0) {
-        loggedListSample = true;
-        console.log(`[sik] sample raw list item (kabkota=${id}, expected kabupaten=${kabupatenName}):`, JSON.stringify(items[0], null, 2));
-      }
-      return items.map((raw) => mapKejadian(raw, kabupatenName));
+      listDone++;
+      if (onProgress) onProgress({ phase: 'list', current: listDone, total: kabkotaEntries.length });
+      return mapped;
     })
   );
   let events = results.flat();
@@ -214,6 +245,8 @@ export async function fetchAllEvents(token, { getPreviousImpacts, rangeMonths, k
   }
 
   let loggedSample = false;
+  let impactsDone = 0;
+  if (onProgress) onProgress({ phase: 'impacts', current: 0, total: events.length });
   await mapWithConcurrency(events, 8, async (ev) => {
     try {
       ev.impacts = await fetchEventImpacts(token, ev.uuid, { logSample: !loggedSample });
@@ -223,6 +256,9 @@ export async function fetchAllEvents(token, { getPreviousImpacts, rangeMonths, k
       // A single event's detail failing shouldn't wipe out previously-synced
       // impact data for it, and shouldn't drop the whole sync either.
       ev.impacts = getPreviousImpacts ? getPreviousImpacts(ev.uuid) : [];
+    } finally {
+      impactsDone++;
+      if (onProgress) onProgress({ phase: 'impacts', current: impactsDone, total: events.length });
     }
   });
 

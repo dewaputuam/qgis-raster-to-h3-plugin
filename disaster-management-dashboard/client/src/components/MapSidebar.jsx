@@ -20,7 +20,7 @@ const selectStyle = {
 
 export default function MapSidebar({
   collapsed, onToggleCollapse, isMobile,
-  events, filteredEvents, regions, filters, onFilterChange, selectedUuid, onSelectEvent,
+  events, filteredEvents, regions, filters, onFilterChange, selectedUuid, onSelectEvent, kabupatenScope,
 }) {
   const totalKejadian = events.length;
   const korbanMeninggal = events.reduce((s, e) => s + (e.korbanMeninggal || 0), 0);
@@ -77,7 +77,7 @@ export default function MapSidebar({
           <div>
             <h2 style={{ fontSize: 20, fontWeight: 800, margin: '0 0 8px', letterSpacing: '-0.01em' }}>Peta Kejadian Bencana</h2>
             <p style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.5, margin: 0 }}>
-              Rekap kejadian bencana Provinsi Bali, lengkap dengan data dampak per kejadian.
+              Rekap kejadian bencana {kabupatenScope ? `${kabupatenScope === 'Denpasar' ? 'Kota' : 'Kabupaten'} ${kabupatenScope}` : 'Provinsi Bali'}, lengkap dengan data dampak per kejadian.
             </p>
           </div>
 

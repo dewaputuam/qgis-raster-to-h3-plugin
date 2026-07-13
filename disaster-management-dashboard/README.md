@@ -179,6 +179,25 @@ strings against N months back) rather than as a query parameter. It only limits 
 *new* fetch pulls in — narrowing the range doesn't delete events already stored from a
 previous, wider-range fetch. Takes effect on the next scheduled or manual fetch.
 
+### Following SIK's pagination (not just page 1)
+
+The list endpoint's response looks like a standard Laravel `paginate()` payload
+(`current_page`/`last_page`/`total` alongside the `data.data` items), wrapped in this app's
+own `data` envelope. Requesting `per_page=200` doesn't guarantee SIK actually honors that
+value - `fetchAllKejadianForKabkota` in `server/lib/sik.js` follows `last_page` and fetches
+every page instead of silently keeping only page 1. A fetch count that looked suspiciously
+low (e.g. "67 item") turned out to be exactly this: nothing in this app enforces a row cap,
+page 2+ just hadn't been requested.
+
+### Fetch progress bar
+
+The SIK source card shows a two-phase progress bar while a fetch is running - "Mengambil
+daftar kejadian" (per kabupaten queried) then "Mengambil detail dampak" (per event's detail
+fetch), each as `current/total · pct%`. `fetchAllEvents`'s `onProgress` callback
+(`server/lib/sik.js`) reports into `source_status.progress_json` (`server/db.js`), and
+`server/lib/scheduler.js` wires it up. The Kelola Data page polls faster (700ms vs. the
+normal 4s) while any source is `loading` so the bar moves smoothly instead of jumping.
+
 ## New-event notifications
 
 Every scheduled SIK fetch compares the events it just pulled against what's already in

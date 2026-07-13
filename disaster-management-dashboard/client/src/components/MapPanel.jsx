@@ -10,7 +10,7 @@ import { formatCoord } from '../lib/format.js';
 
 const BALI_CENTER = [-8.4, 115.15];
 
-export default function MapPanel({ open, events, regions, focusUuid, isMobile, onClose }) {
+export default function MapPanel({ open, events, regions, focusUuid, isMobile, kabupatenScope, onClose }) {
   const panelRef = useRef(null);
   const elRef = useRef(null);
   const mapRef = useRef(null);
@@ -187,6 +187,7 @@ export default function MapPanel({ open, events, regions, focusUuid, isMobile, o
             onFilterChange={(patch) => setFilters((f) => ({ ...f, ...patch }))}
             selectedUuid={selectedUuid}
             onSelectEvent={selectEvent}
+            kabupatenScope={kabupatenScope}
           />
 
           <div style={{ position: 'relative', flex: 1 }}>
