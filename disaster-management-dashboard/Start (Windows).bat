@@ -5,6 +5,17 @@ cd /d "%~dp0"
 echo === Dashboard Monitoring - Sistem Informasi Kebencanaan ===
 echo.
 
+where node >nul 2>nul
+if errorlevel 1 (
+  echo Node.js belum terdeteksi di komputer ini.
+  echo Membuka halaman download Node.js di browser...
+  start "" "https://nodejs.org"
+  echo.
+  echo Install Node.js versi LTS dari halaman yang baru dibuka, lalu jalankan file ini lagi.
+  pause
+  exit /b 1
+)
+
 if exist "server\node_modules" if exist "client\node_modules" goto :skip_install
 echo Menginstall dependencies (hanya diperlukan sekali, mohon tunggu)...
 call npm run install:all

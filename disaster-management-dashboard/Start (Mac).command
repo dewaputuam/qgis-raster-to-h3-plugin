@@ -4,6 +4,16 @@ cd "$(dirname "$0")"
 echo "=== Dashboard Monitoring - Sistem Informasi Kebencanaan ==="
 echo ""
 
+if ! command -v node >/dev/null 2>&1; then
+  echo "Node.js belum terdeteksi di komputer ini."
+  echo "Membuka halaman download Node.js di browser..."
+  open "https://nodejs.org"
+  echo ""
+  echo "Install Node.js versi LTS dari halaman yang baru dibuka, lalu jalankan file ini lagi."
+  read -p "Tekan Enter untuk menutup..."
+  exit 1
+fi
+
 if [ ! -d "server/node_modules" ] || [ ! -d "client/node_modules" ]; then
   echo "Menginstall dependencies (hanya diperlukan sekali, mohon tunggu)..."
   npm run install:all
