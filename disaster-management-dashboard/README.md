@@ -18,13 +18,20 @@ Express server (server/)
   - serves the built React app
   - REST API under /api/*
   - schedules fetches from SIK + BMKG on a timer
-  - stores everything in server/data/app.sqlite (better-sqlite3)
+  - stores everything in server/data/app.sqlite (node:sqlite, Node's built-in module)
 ```
 
 ## Setup
 
-Requires Node.js 18+ (uses the built-in `fetch`) — install it from https://nodejs.org
-first if you haven't already.
+Requires **Node.js 22.5+** — install it from https://nodejs.org first if you haven't
+already. This is a bit newer than a typical "any modern Node" requirement because the
+server uses Node's built-in `node:sqlite` module (added in 22.5) instead of a native addon
+like `better-sqlite3`: no `node-gyp`/Python/C++ build toolchain needed at all, which was a
+real installer failure point on Windows machines without those already set up (a fresh
+Windows PC often only has a recent, non-LTS Node version with no matching prebuilt native
+binary available yet, forcing a from-source compile that then fails without a working
+Python). `node:sqlite` avoids that whole class of problem — `npm install` only needs to
+fetch plain JS packages.
 
 ### Easiest: double-click launcher
 

@@ -1,4 +1,9 @@
-import Database from 'better-sqlite3';
+// Uses Node's built-in sqlite module instead of better-sqlite3: same
+// synchronous prepare/run/get/all API, but no native addon to compile - a
+// native module needing node-gyp (Python + a C++ toolchain) was a real
+// installer risk for non-developer operators on Windows/Mac, exactly the
+// audience the one-click launcher scripts target.
+import { DatabaseSync } from 'node:sqlite';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -8,8 +13,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dataDir = path.join(__dirname, 'data');
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 
-export const db = new Database(path.join(dataDir, 'app.sqlite'));
-db.pragma('journal_mode = WAL');
+export const db = new DatabaseSync(path.join(dataDir, 'app.sqlite'));
+db.exec('PRAGMA journal_mode = WAL');
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS admin_config (
@@ -97,6 +102,35 @@ db.prepare(`INSERT INTO admin_config (id, fetch_settings) VALUES (1, ?) ON CONFL
   JSON.stringify(config.fetchIntervalsMinutes)
 );
 
+// node:sqlite's StatementSync throws on named params that aren't referenced
+// in the SQL text (unlike better-sqlite3, which silently ignores extras) -
+// so event rows (which carry an `impacts` array alongside the plain columns)
+// need to be narrowed to exactly the columns the INSERT statements bind.
+function toEventParams(ev) {
+  return {
+    uuid: ev.uuid, tanggal: ev.tanggal, jam: ev.jam, jenisBencana: ev.jenisBencana, lokasi: ev.lokasi,
+    keterangan: ev.keterangan, kabupaten: ev.kabupaten, kecamatan: ev.kecamatan, desa: ev.desa,
+    korbanMeninggal: ev.korbanMeninggal, korbanLuka: ev.korbanLuka, korbanHilang: ev.korbanHilang,
+    bangunanRr: ev.bangunanRr, bangunanRs: ev.bangunanRs, bangunanRb: ev.bangunanRb, kerugian: ev.kerugian,
+    statusVerifikasi: ev.statusVerifikasi, lat: ev.lat, lng: ev.lng,
+    impactsJson: JSON.stringify(ev.impacts || []),
+  };
+}
+
+// node:sqlite's DatabaseSync has no db.transaction() helper (a
+// better-sqlite3-specific convenience) - wrap the bulk seed inserts in a
+// plain BEGIN/COMMIT instead, rolling back on failure.
+function runInTransaction(fn) {
+  db.exec('BEGIN');
+  try {
+    fn();
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+}
+
 function seedIfEmpty() {
   const eventCount = db.prepare('SELECT COUNT(*) AS n FROM events').get().n;
   if (eventCount === 0) {
@@ -109,12 +143,9 @@ function seedIfEmpty() {
         @korbanMeninggal, @korbanLuka, @korbanHilang, @bangunanRr, @bangunanRs, @bangunanRb, @kerugian,
         @statusVerifikasi, @lat, @lng, @impactsJson)
     `);
-    const tx = db.transaction((items) => {
-      for (const ev of items) {
-        insert.run({ ...ev, impactsJson: JSON.stringify(ev.impacts || []) });
-      }
+    runInTransaction(() => {
+      for (const ev of seed) insert.run(toEventParams(ev));
     });
-    tx(seed);
     console.log(`[db] seeded ${seed.length} events`);
   }
 
@@ -122,10 +153,9 @@ function seedIfEmpty() {
   if (regionCount === 0) {
     const regions = JSON.parse(fs.readFileSync(path.join(dataDir, 'bali-regions.json'), 'utf-8'));
     const insert = db.prepare(`INSERT OR IGNORE INTO regions (adm4, kabupaten, kecamatan, desa) VALUES (@adm4, @kabupaten, @kecamatan, @desa)`);
-    const tx = db.transaction((items) => {
-      for (const r of items) insert.run(r);
+    runInTransaction(() => {
+      for (const r of regions) insert.run(r);
     });
-    tx(regions);
     console.log(`[db] seeded ${regions.length} regions`);
   }
 }
@@ -147,7 +177,7 @@ export function upsertEvent(ev) {
       bangunan_rr=excluded.bangunan_rr, bangunan_rs=excluded.bangunan_rs, bangunan_rb=excluded.bangunan_rb,
       kerugian=excluded.kerugian, status_verifikasi=excluded.status_verifikasi, lat=excluded.lat, lng=excluded.lng,
       impacts_json=excluded.impacts_json
-  `).run({ ...ev, impactsJson: JSON.stringify(ev.impacts || []) });
+  `).run(toEventParams(ev));
 }
 
 function rowToEvent(row) {
