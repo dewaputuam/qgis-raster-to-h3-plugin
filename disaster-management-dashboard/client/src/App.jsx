@@ -163,9 +163,9 @@ export default function App() {
           <QuakeMarquee quakes={quakes} />
           <section
             style={{
-              maxWidth: 1160,
+              maxWidth: 1800,
               margin: '0 auto',
-              padding: isMobile ? '28px 20px' : '40px 32px',
+              padding: isMobile ? '28px 20px' : '40px 48px',
               display: 'grid',
               gridTemplateColumns: isMobile ? '1fr' : '340px 1fr',
               gap: 40,

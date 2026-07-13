@@ -1,6 +1,42 @@
+import { severityColor } from '../theme.js';
 import { formatRupiah } from '../lib/format.js';
 import TrendChart from './TrendChart.jsx';
 import EventMarquee from './EventMarquee.jsx';
+
+function RankedBreakdown({ title, counts, colorFor }) {
+  const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  const max = entries.length ? entries[0][1] : 0;
+  return (
+    <div style={{ minWidth: 0 }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.03em', marginBottom: 10 }}>
+        {title}
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {entries.map(([label, count]) => (
+          <div key={label}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 3 }}>
+              <span style={{ color: 'var(--fg2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
+              <span style={{ fontWeight: 700, flexShrink: 0, marginLeft: 8 }}>{count}</span>
+            </div>
+            <div style={{ height: 5, borderRadius: 999, background: 'var(--band)', overflow: 'hidden' }}>
+              <div style={{ height: '100%', width: `${max ? (count / max) * 100 : 0}%`, background: colorFor ? colorFor(label) : 'var(--accent-strong)', borderRadius: 999 }} />
+            </div>
+          </div>
+        ))}
+        {!entries.length && <div style={{ fontSize: 12, color: 'var(--muted)' }}>Belum ada data.</div>}
+      </div>
+    </div>
+  );
+}
+
+function countBy(events, key) {
+  const counts = {};
+  for (const ev of events) {
+    const k = ev[key] || '(tidak diketahui)';
+    counts[k] = (counts[k] || 0) + 1;
+  }
+  return counts;
+}
 
 function lastUpdateLabel(events) {
   if (!events.length) return 'Memuat data terbaru…';
@@ -64,6 +100,11 @@ export default function ReportPanel({ events, isMobile, onOpenMap }) {
           <StatGroup title="Korban" items={[[meninggal, '☠ Meninggal'], [lukaBerat, '🩹 Luka berat'], [hilang, '❓ Hilang']]} />
           <StatGroup title="Kerusakan Bangunan" items={[[rusakBerat, '🏚 Rusak berat'], [rusakRingan, '🏠 Rusak ringan']]} />
         </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 28, marginTop: 24, paddingTop: 20, borderTop: '1px solid var(--border)' }}>
+        <RankedBreakdown title="Kejadian per Kabupaten/Kota" counts={countBy(events, 'kabupaten')} />
+        <RankedBreakdown title="Kejadian per Jenis Bencana" counts={countBy(events, 'jenisBencana')} colorFor={severityColor} />
       </div>
 
       <EventMarquee events={events} onOpenMap={onOpenMap} style={{ marginTop: 24 }} />
