@@ -129,10 +129,16 @@ served afterward: `fetchAllEvents` in `server/lib/sik.js` only queries the scope
 kabupaten's own `kabkota_id` instead of all nine. A kabupaten-office account pulling all of
 Bali's data just to throw 8/9 of it away at read time was both wasteful and, in practice,
 enough simultaneous load against SIK's real API to trigger a `429 Too Many Requests` on one
-of the unrelated kabupaten - fixed alongside a small retry-with-backoff for 429s specifically
-(honoring `Retry-After` when SIK sends one) and a slight stagger between each kabupaten's
-request when fetching unscoped, so a "bidang" account's nine parallel requests don't land in
-the same instant either.
+of the unrelated kabupaten - fixed alongside a small retry-with-backoff (`fetchWithRetry` in
+`server/lib/sik.js`) for 429/5xx specifically (honoring `Retry-After` when SIK sends one) and
+a slight stagger between each kabupaten's request when fetching unscoped, so a "bidang"
+account's nine parallel requests don't land in the same instant either.
+
+`sikLogin()` uses the same `fetchWithRetry` on `/auth/login` too - several kabupaten offices
+logging in around the same time (shift start, etc.) can trip SIK's rate limit or hit a
+transient server error on the login endpoint specifically, which used to surface as a raw
+"SIK login HTTP 429" instead of just quietly retrying and succeeding. Only 401 (wrong
+credentials) and other 4xx are treated as real rejections and never retried.
 
 Two report labels adapt when a scope is active, since "which kabupaten had the most
 events" is meaningless once every event already belongs to the same one:

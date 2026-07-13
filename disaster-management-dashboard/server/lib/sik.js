@@ -9,12 +9,17 @@ export class SikAuthError extends Error {
 }
 
 export async function sikLogin(username, password) {
-  const res = await fetch(`${config.sikBaseUrl}/auth/login`, {
+  // A burst of logins from different kabupaten offices around the same time
+  // (e.g. shift start) can trip SIK's own rate limit or transient server
+  // errors on this endpoint too, not just the data-fetch ones - retried the
+  // same way rather than surfacing a one-off 429/5xx as "login failed".
+  const res = await fetchWithRetry(`${config.sikBaseUrl}/auth/login`, {
     method: 'POST',
     headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
     body: JSON.stringify({ username, password, device_name: 'DISASTER_DASHBOARD' }),
   });
   if (res.status === 401) throw new SikAuthError('Username atau password salah.');
+  if (res.status === 429) throw new Error('Server SIK sedang membatasi permintaan (429). Coba login lagi dalam beberapa saat.');
   if (!res.ok) throw new Error(`SIK login HTTP ${res.status}`);
   const body = await res.json();
   const token = body && body.data && body.data.token;
@@ -155,13 +160,17 @@ function sleep(ms) {
 }
 
 // SIK is a small government API, not built to take nine simultaneous list
-// requests plus a burst of per-event detail requests - retries a 429
-// (rate limited) with backoff instead of failing the whole sync outright,
-// honoring Retry-After when the server sends one.
+// requests plus a burst of per-event detail requests (or, it turns out,
+// several kabupaten offices' logins landing close together) - retries a 429
+// (rate limited) or 5xx (server-side hiccup) with backoff instead of failing
+// outright, honoring Retry-After when the server sends one. Deliberately
+// does NOT retry 401/other 4xx - those are real rejections (wrong
+// credentials, bad request), not transient load issues.
 async function fetchWithRetry(url, options, { maxRetries = 3 } = {}) {
   for (let attempt = 0; ; attempt++) {
     const res = await fetch(url, options);
-    if (res.status !== 429 || attempt >= maxRetries) return res;
+    const transient = res.status === 429 || res.status >= 500;
+    if (!transient || attempt >= maxRetries) return res;
     const retryAfterSec = Number(res.headers.get('retry-after'));
     await sleep(retryAfterSec > 0 ? retryAfterSec * 1000 : (attempt + 1) * 1500);
   }
