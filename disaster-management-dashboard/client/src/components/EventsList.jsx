@@ -147,7 +147,7 @@ export default function EventsList({ events, regions, onOpenMap }) {
                           <span>Rumah Rusak Berat: {ev.bangunanRb}</span>
                           <span>Rusak Sedang: {ev.bangunanRs}</span>
                           <span>Rusak Ringan: {ev.bangunanRr}</span>
-                          <span>Kerugian: {formatRupiah(ev.kerugian)}</span>
+                          <span>Nilai Kerusakan: {formatRupiah(ev.kerugian)}</span>
                           <span>Dampak Tercatat: {(ev.impacts || []).length}</span>
                         </div>
                         <button

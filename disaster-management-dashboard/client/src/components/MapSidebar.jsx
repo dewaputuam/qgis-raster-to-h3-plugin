@@ -86,7 +86,7 @@ export default function MapSidebar({
               <StatCard value={totalKejadian} label="📋 Total kejadian" />
               <StatCard value={korbanMeninggal} label="☠ Korban meninggal" />
             </div>
-            <StatCard value={formatRupiah(totalKerugian)} label="💸 Total kerugian" wide />
+            <StatCard value={formatRupiah(totalKerugian)} label="💸 Total nilai kerusakan" wide />
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>

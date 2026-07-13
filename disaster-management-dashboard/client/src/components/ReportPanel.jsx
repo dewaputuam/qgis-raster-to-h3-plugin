@@ -56,12 +56,12 @@ function periodLabel(events) {
 function StatGroup({ title, items }) {
   return (
     <div style={{ marginBottom: 14 }}>
-      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.03em', marginBottom: 8 }}>{title}</div>
-      <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap' }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.03em', marginBottom: 10 }}>{title}</div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 10 }}>
         {items.map(([value, label]) => (
-          <div key={label}>
+          <div key={label} style={{ border: '1px solid var(--border)', borderRadius: 12, padding: '12px 14px', background: 'var(--band)' }}>
             <div style={{ fontSize: 20, fontWeight: 800 }}>{value}</div>
-            <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{label}</div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{label}</div>
           </div>
         ))}
       </div>
@@ -72,12 +72,19 @@ function StatGroup({ title, items }) {
 export default function ReportPanel({ events, isMobile, onOpenMap, kabupatenScope }) {
   const total = events.length;
   const titikDampak = events.reduce((s, e) => s + (e.impacts || []).length, 0);
+  const wilayahTerdampak = new Set(events.map((e) => (kabupatenScope ? e.kecamatan : e.kabupaten)).filter(Boolean)).size;
   const meninggal = events.reduce((s, e) => s + (e.korbanMeninggal || 0), 0);
   const lukaBerat = events.reduce((s, e) => s + (e.impacts || []).reduce((s2, im) => s2 + (im.korbanLukaBerat || 0), 0), 0);
+  const lukaRingan = events.reduce((s, e) => s + (e.impacts || []).reduce((s2, im) => s2 + (im.korbanLukaRingan || 0), 0), 0);
   const hilang = events.reduce((s, e) => s + (e.korbanHilang || 0), 0);
+  const mengungsi = events.reduce(
+    (s, e) => s + (e.impacts || []).reduce((s2, im) => s2 + (im.mengungsiL || 0) + (im.mengungsiP || 0), 0),
+    0
+  );
   const rusakBerat = events.reduce((s, e) => s + (e.bangunanRb || 0), 0);
+  const rusakSedang = events.reduce((s, e) => s + (e.bangunanRs || 0), 0);
   const rusakRingan = events.reduce((s, e) => s + (e.bangunanRr || 0), 0);
-  const kerugian = formatRupiah(
+  const nilaiKerusakan = formatRupiah(
     events.reduce((s, e) => s + (e.kerugian || 0) + (e.impacts || []).reduce((s2, im) => s2 + (im.totalKerugian || 0), 0), 0)
   );
 
@@ -94,11 +101,32 @@ export default function ReportPanel({ events, isMobile, onOpenMap, kabupatenScop
       <div style={{ marginTop: 18 }}>
         <StatGroup
           title="Ringkasan"
-          items={[[total, '📋 Titik kejadian'], [titikDampak, '📍 Titik dampak'], [kerugian, '💸 Total kerugian']]}
+          items={[
+            [total, '📋 Titik kejadian'],
+            [titikDampak, '📍 Titik dampak'],
+            [wilayahTerdampak, kabupatenScope ? '🗺 Kecamatan terdampak' : '🗺 Kabupaten terdampak'],
+            [nilaiKerusakan, '💸 Total nilai kerusakan'],
+          ]}
         />
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 20 }}>
-          <StatGroup title="Korban" items={[[meninggal, '☠ Meninggal'], [lukaBerat, '🩹 Luka berat'], [hilang, '❓ Hilang']]} />
-          <StatGroup title="Kerusakan Bangunan" items={[[rusakBerat, '🏚 Rusak berat'], [rusakRingan, '🏠 Rusak ringan']]} />
+          <StatGroup
+            title="Korban"
+            items={[
+              [meninggal, '☠ Meninggal'],
+              [lukaBerat, '🩹 Luka berat'],
+              [lukaRingan, '🩹 Luka ringan'],
+              [hilang, '❓ Hilang'],
+              [mengungsi, '🏠 Mengungsi'],
+            ]}
+          />
+          <StatGroup
+            title="Kerusakan Bangunan"
+            items={[
+              [rusakBerat, '🏚 Rusak berat'],
+              [rusakSedang, '🏚 Rusak sedang'],
+              [rusakRingan, '🏠 Rusak ringan'],
+            ]}
+          />
         </div>
       </div>
 
