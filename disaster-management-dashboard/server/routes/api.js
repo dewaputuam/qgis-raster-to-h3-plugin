@@ -6,6 +6,7 @@ import { sikLogin, SikAuthError } from '../lib/sik.js';
 import { scheduleSourceFetch, onIntervalChange } from '../lib/scheduler.js';
 import { fetchCuaca } from '../lib/bmkg.js';
 import { encrypt } from '../lib/crypto.js';
+import { isPointInKabupaten } from '../lib/kabupatenPolygons.js';
 
 export const router = Router();
 
@@ -40,7 +41,14 @@ router.get('/weather/lookup', async (req, res) => {
 
 router.get('/events', (req, res) => {
   const { start, end } = req.query;
-  res.json({ data: db.getEvents({ start, end }) });
+  const events = db.getEvents({ start, end }).map((ev) => ({
+    ...ev,
+    // true/false = checked against the real kabupaten polygon; null = the
+    // event's kabupaten/coordinates couldn't be checked (unrecognized name
+    // or missing lat/lng) - the client falls back to its own heuristic then.
+    locationValid: isPointInKabupaten(ev.kabupaten, ev.lat, ev.lng),
+  }));
+  res.json({ data: events });
 });
 
 router.get('/regions', (req, res) => {

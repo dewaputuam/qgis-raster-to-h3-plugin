@@ -15,8 +15,7 @@ function isWithinBaliBounds(lat, lng) {
 
 // "Valid" means both inside Bali at all AND inside the specific kabupaten the
 // event claims to be in - catches a coordinate that's technically within
-// Bali but doesn't match its own reported kabupaten (see kabupatenBounds.js
-// for the approximation this relies on).
+// Bali but doesn't match its own reported kabupaten.
 //
 // This is deliberately a coordinate check, not a kecamatan/kabupaten label
 // check: SIK's own kecamatan and kabupaten fields are always internally
@@ -24,8 +23,15 @@ function isWithinBaliBounds(lat, lng) {
 // a label-consistency check would pass 100% of events regardless of whether
 // the lat/lng is actually wrong - which is the real thing this panel exists
 // to catch (e.g. a bad map pin, or a corrupted coordinate).
+//
+// The server computes ev.locationValid against real kabupaten boundary
+// polygons (server/lib/kabupatenPolygons.js) - true/false when it could
+// check, null when the kabupaten name wasn't recognized. Only fall back to
+// the coarse hand-estimated bounding box in that null case.
 function isLocationValid(ev) {
-  return isWithinBaliBounds(ev.lat, ev.lng) && isWithinKabupatenBounds(ev.kabupaten, ev.lat, ev.lng);
+  if (!isWithinBaliBounds(ev.lat, ev.lng)) return false;
+  if (ev.locationValid !== null && ev.locationValid !== undefined) return ev.locationValid;
+  return isWithinKabupatenBounds(ev.kabupaten, ev.lat, ev.lng);
 }
 
 export default function MapPanel({ open, events, regions, focusUuid, isMobile, onClose }) {

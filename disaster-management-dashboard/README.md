@@ -160,15 +160,20 @@ most to least trustworthy:
 ## Location verification on the map
 
 The map's "kejadian tanpa lokasi valid" panel doesn't just check for missing coordinates —
-it checks whether an event's lat/lng actually falls inside the kabupaten it claims to be in
-(`client/src/lib/kabupatenBounds.js`), catching cases like an event tagged "Karangasem"
-whose coordinates actually point somewhere else (a bad map pin, a corrupted coordinate,
-etc). **The per-kabupaten boxes are hand-estimated rectangles, not real administrative
-boundaries** — no official GeoJSON boundary file was available while building this. That
-means: boxes overlap at shared borders, and an event near a kabupaten's edge can be flagged
-even though it's genuinely correct. Swap in a real boundary polygon dataset (e.g. from Badan
-Informasi Geospasial) and switch to point-in-polygon if that level of accuracy matters for
-your use — the check is isolated in one file to make that swap easy.
+it checks whether an event's lat/lng actually falls inside the kabupaten it claims to be in,
+catching cases like an event tagged "Karangasem" whose coordinates actually point somewhere
+else (a bad map pin, a corrupted coordinate, etc).
+
+This now runs against **real kabupaten/kota boundary polygons**
+(`server/data/kabupaten-boundaries.geojson`, an official administrative boundary dataset —
+kabupaten identity keyed off its `WADMKK` name field rather than the `KDPKAB` code column,
+since two of the nine features had an ambiguous dual code like `51.06/51.03`, likely a
+border-segment merge artifact from whatever dissolve produced the file). `server/lib/
+kabupatenPolygons.js` does a point-in-polygon (ray-casting, with hole support) check per
+event and the `/api/events` response carries the result as `locationValid`. The hand-
+estimated rectangular bounding boxes in `client/src/lib/kabupatenBounds.js` are kept only as
+a fallback for the (currently never-hit) case where an event's kabupaten name doesn't match
+any of the nine known polygons.
 
 This is deliberately a coordinate check only, kept separate from the kecamatan/kabupaten
 label cross-check described above. An earlier version of this check tried to reuse the
