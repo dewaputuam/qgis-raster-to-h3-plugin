@@ -112,7 +112,7 @@ function mapImpact(raw) {
 }
 
 async function fetchEventImpacts(token, uuid, { logSample } = {}) {
-  const res = await fetch(`${config.sikBaseUrl}/lap-kejadian/${uuid}`, {
+  const res = await fetchWithRetry(`${config.sikBaseUrl}/lap-kejadian/${uuid}`, {
     headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
   });
   if (res.status === 401) throw new SikAuthError('Token SIK kedaluwarsa atau tidak valid.');
@@ -150,12 +150,40 @@ function cutoffDateString(rangeMonths) {
   return cutoff.toISOString().slice(0, 10);
 }
 
-export async function fetchAllEvents(token, { getPreviousImpacts, rangeMonths } = {}) {
-  const kabkotaEntries = Object.entries(config.kabkotaIds);
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// SIK is a small government API, not built to take nine simultaneous list
+// requests plus a burst of per-event detail requests - retries a 429
+// (rate limited) with backoff instead of failing the whole sync outright,
+// honoring Retry-After when the server sends one.
+async function fetchWithRetry(url, options, { maxRetries = 3 } = {}) {
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(url, options);
+    if (res.status !== 429 || attempt >= maxRetries) return res;
+    const retryAfterSec = Number(res.headers.get('retry-after'));
+    await sleep(retryAfterSec > 0 ? retryAfterSec * 1000 : (attempt + 1) * 1500);
+  }
+}
+
+export async function fetchAllEvents(token, { getPreviousImpacts, rangeMonths, kabupatenScope } = {}) {
+  const allEntries = Object.entries(config.kabkotaIds);
+  // A kabupaten-office account only ever needs its own kabupaten's data -
+  // pulling all nine (then discarding 8/9 of it at read time via the scope
+  // filter in routes/api.js) wastes requests against a real, rate-limited
+  // external API for no benefit, and was the direct cause of a 429 for a
+  // scoped account that had no reason to be fetching every other kabupaten.
+  const kabkotaEntries = kabupatenScope
+    ? allEntries.filter(([name]) => name === kabupatenScope)
+    : allEntries;
   let loggedListSample = false;
   const results = await Promise.all(
-    kabkotaEntries.map(async ([kabupatenName, id]) => {
-      const res = await fetch(`${config.sikBaseUrl}/lap-kejadian?kabkota=${id}&per_page=200`, {
+    kabkotaEntries.map(async ([kabupatenName, id], i) => {
+      // Stagger the start of each request slightly instead of firing all of
+      // them in the same instant - still concurrent, just not a single burst.
+      await sleep(i * 250);
+      const res = await fetchWithRetry(`${config.sikBaseUrl}/lap-kejadian?kabkota=${id}&per_page=200`, {
         headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
       });
       if (res.status === 401) throw new SikAuthError('Token SIK kedaluwarsa atau tidak valid.');

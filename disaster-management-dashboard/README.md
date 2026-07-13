@@ -124,6 +124,16 @@ because the token hasn't refreshed yet) — only a different account logging in 
 scope. A small "📍 Kabupaten" badge in the header (and a note in the login card) shows when
 this is active, so it's clear why the data looks narrower than "all of Bali".
 
+The scope also limits *what gets fetched from SIK in the first place*, not just what's
+served afterward: `fetchAllEvents` in `server/lib/sik.js` only queries the scoped
+kabupaten's own `kabkota_id` instead of all nine. A kabupaten-office account pulling all of
+Bali's data just to throw 8/9 of it away at read time was both wasteful and, in practice,
+enough simultaneous load against SIK's real API to trigger a `429 Too Many Requests` on one
+of the unrelated kabupaten - fixed alongside a small retry-with-backoff for 429s specifically
+(honoring `Retry-After` when SIK sends one) and a slight stagger between each kabupaten's
+request when fetching unscoped, so a "bidang" account's nine parallel requests don't land in
+the same instant either.
+
 Two report labels adapt when a scope is active, since "which kabupaten had the most
 events" is meaningless once every event already belongs to the same one:
 - The report header reads "BPBD `<Kabupaten>`" instead of "BPBD Bali".

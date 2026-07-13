@@ -3,6 +3,7 @@ import * as db from '../db.js';
 import { fetchCuaca, fetchGempaTerkini } from './bmkg.js';
 import { fetchAllEvents, sikLogin, SikAuthError } from './sik.js';
 import { decrypt } from './crypto.js';
+import { detectKabupatenScope } from './kabupatenScope.js';
 
 const timers = {};
 
@@ -68,13 +69,14 @@ async function runFetch(key) {
     if (key === 'sik') {
       let admin = db.getAdminConfig();
       const rangeMonths = getSikRangeMonths();
+      const kabupatenScope = detectKabupatenScope(admin.username);
       let events;
       try {
-        events = await fetchAllEvents(admin.token, { getPreviousImpacts: db.getEventImpacts, rangeMonths });
+        events = await fetchAllEvents(admin.token, { getPreviousImpacts: db.getEventImpacts, rangeMonths, kabupatenScope });
       } catch (err) {
         if (!(err instanceof SikAuthError) || !(await attemptSikRelogin())) throw err;
         admin = db.getAdminConfig();
-        events = await fetchAllEvents(admin.token, { getPreviousImpacts: db.getEventImpacts, rangeMonths });
+        events = await fetchAllEvents(admin.token, { getPreviousImpacts: db.getEventImpacts, rangeMonths, kabupatenScope });
       }
       const existingUuids = db.getAllEventUuids();
       const newOnes = events
