@@ -148,11 +148,25 @@ async function mapWithConcurrency(items, limit, fn) {
 // unreliable ("filter tanggal via parameter query kadang tidak konsisten di
 // sisi server") and should be done client-side after the full list comes
 // back - this does that, comparing DATE_KEJ strings (YYYY-MM-DD, so a plain
-// string comparison works) against a cutoff N months back.
+// string comparison works) against a cutoff.
+//
+// "N bulan terakhir" is whole calendar months, not a rolling N*30-day
+// window: the cutoff is the 1st of the month N months before the current
+// one, so the current (partial) month is always included in full alongside
+// it - e.g. fetched mid-July, "1 bulan" means the whole of June and July,
+// "2 bulan" adds the whole of May, and so on. An earlier version anchored
+// on today's day-of-month instead (cutoff = exactly N months back from
+// today), which cut off the first half of the current range's oldest month
+// depending what day of the month it happened to be run on.
 function cutoffDateString(rangeMonths) {
-  const cutoff = new Date();
-  cutoff.setMonth(cutoff.getMonth() - rangeMonths);
-  return cutoff.toISOString().slice(0, 10);
+  const now = new Date();
+  let year = now.getFullYear();
+  let month = now.getMonth() - rangeMonths;
+  while (month < 0) {
+    month += 12;
+    year -= 1;
+  }
+  return `${year}-${String(month + 1).padStart(2, '0')}-01`;
 }
 
 function sleep(ms) {

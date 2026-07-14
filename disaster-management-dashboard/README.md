@@ -183,6 +183,15 @@ re-fetch, so the "Data Ditarik" count would silently stay exactly the same until
 separately hit "Fetch Sekarang" or the next scheduled run, which looked like the range setting
 wasn't doing anything at all.
 
+"N bulan terakhir" means whole calendar months, not a rolling N×30-day window: the cutoff is
+the 1st of the month N months before the current one, so the current (partial) month is
+always included in full - e.g. fetched mid-July, "1 bulan" covers all of June and July, "2
+bulan" adds all of May, "6 bulan" reaches back to January. An earlier version anchored the
+cutoff on today's exact day-of-month instead (literally N months back from today), which cut
+off the first part of what should've been the range's oldest month depending what day it
+happened to run on - e.g. "1 bulan" run on July 14 would cut off everything in June before
+the 14th, instead of including the whole month.
+
 ### Following SIK's pagination (not just page 1)
 
 The list endpoint's response looks like a standard Laravel `paginate()` payload
