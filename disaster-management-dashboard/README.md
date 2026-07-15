@@ -192,6 +192,17 @@ off the first part of what should've been the range's oldest month depending wha
 happened to run on - e.g. "1 bulan" run on July 14 would cut off everything in June before
 the 14th, instead of including the whole month.
 
+**Important limitation**: this range can only ever *narrow down* from what SIK's own
+`/lap-kejadian?kabkota=X` response already contains — it can't request more historical data
+than that endpoint returns in the first place. The guide's own reference implementation (§4.2)
+never sends a date parameter to SIK at all; it fetches everything available and filters
+client-side exactly like this app does. So if every event SIK returns for a kabupaten already
+falls inside, say, the last month, then "1 bulan" and "6 bulan" will correctly show the exact
+same count - that's not a bug, there's simply nothing older available from SIK to filter
+differently. The SIK source card's "Rentang Tanggal Data" stat (oldest–newest date among the
+events the last fetch actually returned) makes this visible: if it doesn't reach as far back
+as the selected range, the ceiling is coming from SIK's response itself, not from this app.
+
 ### Following SIK's pagination (not just page 1)
 
 The list endpoint's response looks like a standard Laravel `paginate()` payload

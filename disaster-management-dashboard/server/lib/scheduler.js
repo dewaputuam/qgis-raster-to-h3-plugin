@@ -66,6 +66,7 @@ async function runFetch(key) {
   db.setSourceStatus(key, { status: 'loading', error: null, progress: null });
   try {
     let count = 0;
+    let dateRangeForStatus = null;
     if (key === 'sik') {
       let admin = db.getAdminConfig();
       const rangeMonths = getSikRangeMonths();
@@ -88,6 +89,13 @@ async function runFetch(key) {
       db.pushNotifications(newOnes);
       for (const ev of events) db.upsertEvent(ev);
       count = events.length;
+      // Oldest/newest date actually returned by this fetch - shown in Kelola
+      // Data so it's obvious whether "Rentang Data" is having any effect,
+      // rather than just trusting the item count on its own.
+      const tanggalList = events.map((ev) => ev.tanggal).filter(Boolean).sort();
+      dateRangeForStatus = tanggalList.length
+        ? { oldest: tanggalList[0], newest: tanggalList[tanggalList.length - 1] }
+        : null;
     } else if (key === 'cuaca') {
       const { lokasi, cuaca } = await fetchCuaca(config.defaultAdm4);
       db.cacheWeather(config.defaultAdm4, lokasi, cuaca);
@@ -99,7 +107,7 @@ async function runFetch(key) {
     }
     const now = Date.now();
     const intervalMin = getIntervalMinutes(key);
-    db.setSourceStatus(key, { status: 'ok', lastFetch: now, nextFetch: now + intervalMin * 60000, count, error: null, progress: null });
+    db.setSourceStatus(key, { status: 'ok', lastFetch: now, nextFetch: now + intervalMin * 60000, count, error: null, progress: null, dateRange: dateRangeForStatus });
     armTimer(key, intervalMin);
   } catch (err) {
     if (err instanceof SikAuthError) {

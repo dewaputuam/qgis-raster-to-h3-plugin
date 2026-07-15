@@ -91,10 +91,14 @@ if (!adminConfigCols.includes('password_enc')) {
   db.exec('ALTER TABLE admin_config ADD COLUMN password_enc TEXT');
 }
 
-// Same idea: source_status predates the fetch-progress bar.
+// Same idea: source_status predates the fetch-progress bar and the
+// oldest/newest date-range display.
 const sourceStatusCols = db.prepare("PRAGMA table_info(source_status)").all().map((c) => c.name);
 if (!sourceStatusCols.includes('progress_json')) {
   db.exec('ALTER TABLE source_status ADD COLUMN progress_json TEXT');
+}
+if (!sourceStatusCols.includes('date_range_json')) {
+  db.exec('ALTER TABLE source_status ADD COLUMN date_range_json TEXT');
 }
 
 db.prepare(`INSERT INTO notification_queue (id, events_json) VALUES (1, '[]') ON CONFLICT(id) DO NOTHING`).run();
@@ -241,6 +245,11 @@ export function getSourceStatus(key) {
     // { phase: 'list'|'impacts', current, total } while a fetch is running -
     // null the rest of the time (not meaningful once status isn't 'loading').
     progress: row.progress_json ? JSON.parse(row.progress_json) : null,
+    // { oldest, newest } tanggal (YYYY-MM-DD) among the events the last
+    // completed fetch actually returned - lets an operator see at a glance
+    // whether "Rentang Data" is having any effect, instead of just trusting
+    // the item count.
+    dateRange: row.date_range_json ? JSON.parse(row.date_range_json) : null,
   };
 }
 
@@ -249,17 +258,18 @@ export function getAllSourceStatus() {
 }
 
 export function setSourceStatus(key, patch) {
-  const cur = getSourceStatus(key) || { key, status: 'idle', lastFetch: null, nextFetch: null, count: null, error: null, progress: null };
+  const cur = getSourceStatus(key) || { key, status: 'idle', lastFetch: null, nextFetch: null, count: null, error: null, progress: null, dateRange: null };
   const next = { ...cur, ...patch };
   // node:sqlite throws on named params not referenced in the SQL (unlike
   // better-sqlite3, which ignores extras) - bind exactly the columns used,
-  // not a spread of `next` (which carries `progress`, the object, while the
-  // column is `progressJson`, the serialized string).
+  // not a spread of `next` (which carries `progress`/`dateRange`, the
+  // objects, while the columns are `progressJson`/`dateRangeJson`, the
+  // serialized strings).
   db.prepare(`
-    INSERT INTO source_status (key, status, last_fetch, next_fetch, count, error, progress_json)
-      VALUES (@key, @status, @lastFetch, @nextFetch, @count, @error, @progressJson)
+    INSERT INTO source_status (key, status, last_fetch, next_fetch, count, error, progress_json, date_range_json)
+      VALUES (@key, @status, @lastFetch, @nextFetch, @count, @error, @progressJson, @dateRangeJson)
     ON CONFLICT(key) DO UPDATE SET status=excluded.status, last_fetch=excluded.last_fetch, next_fetch=excluded.next_fetch,
-      count=excluded.count, error=excluded.error, progress_json=excluded.progress_json
+      count=excluded.count, error=excluded.error, progress_json=excluded.progress_json, date_range_json=excluded.date_range_json
   `).run({
     key: next.key,
     status: next.status,
@@ -268,6 +278,7 @@ export function setSourceStatus(key, patch) {
     count: next.count,
     error: next.error,
     progressJson: next.progress ? JSON.stringify(next.progress) : null,
+    dateRangeJson: next.dateRange ? JSON.stringify(next.dateRange) : null,
   });
   return next;
 }

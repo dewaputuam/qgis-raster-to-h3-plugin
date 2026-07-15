@@ -210,6 +210,12 @@ export default function AdminPanel({ events, regions, onOpenMap }) {
                 <Stat label="Fetch Terakhir" value={formatDateTime(st.lastFetch)} />
                 <Stat label="Data Ditarik" value={st.count == null ? '—' : `${st.count} item`} />
                 <Stat label="Fetch Berikutnya" value={key === 'sik' && !sikStatus.loggedIn ? '—' : formatCountdown(st.nextFetch, now)} />
+                {key === 'sik' && (
+                  <Stat
+                    label="Rentang Tanggal Data"
+                    value={st.dateRange ? `${st.dateRange.oldest} s/d ${st.dateRange.newest}` : '—'}
+                  />
+                )}
               </div>
 
               {st.status === 'loading' && st.progress && <FetchProgressBar progress={st.progress} />}
