@@ -329,13 +329,22 @@ async function fetchKejadianPage(token, page, dateRange) {
 // same page). MAX_PAGES is purely a runaway-loop safety net.
 const MAX_PAGES = 500;
 
-async function fetchAllKejadian(token, { onListSample, dateRange } = {}) {
+async function fetchAllKejadian(token, { onListSample, dateRange, onlyFirstPage } = {}) {
   const first = await fetchKejadianPage(token, 1, dateRange);
   const seenUuids = new Set(first.items.map((it) => it.uuid).filter(Boolean));
   let allItems = first.items;
   let pagesFetched = first.items.length > 0 ? 1 : 0;
   let page = 2;
+  // onlyFirstPage (the scheduler's automatic-fetch "incremental" mode): SIK
+  // returns newest-first, so page 1 alone already covers every new event
+  // since the last cycle for a normal-sized list - walking every remaining
+  // page just to re-see already-known older events is the dominant cost of
+  // a routine fetch (each one's detail request is paced 500ms apart to
+  // respect SIK's throttle). An operator forcing a full resync (the "Fetch
+  // Sekarang" button, a Rentang Data change, or logging in) still walks
+  // every page as before.
   while (
+    !onlyFirstPage &&
     allItems.length > 0 &&
     pagesFetched < MAX_PAGES &&
     (first.lastPage == null || page <= first.lastPage)
@@ -367,7 +376,8 @@ async function fetchAllKejadian(token, { onListSample, dateRange } = {}) {
   };
 }
 
-export async function fetchAllEvents(token, { getPreviousImpacts, rangeMonths, onProgress } = {}) {
+export async function fetchAllEvents(token, { getPreviousEvent, rangeMonths, onProgress, mode = 'full' } = {}) {
+  const incremental = mode === 'incremental';
   // Sent as a best-effort server-side date filter (see dateRangeParams) in
   // addition to the client-side cutoff filter further down - if SIK's list
   // endpoint really does default to recent-only data server-side, this is
@@ -375,6 +385,7 @@ export async function fetchAllEvents(token, { getPreviousImpacts, rangeMonths, o
   const dateRange = rangeMonths ? { from: cutoffDateString(rangeMonths), to: todayDateString() } : null;
   const { events: rawEvents, diag } = await fetchAllKejadian(token, {
     dateRange,
+    onlyFirstPage: incremental,
     onListSample: (sample, meta) => {
       console.log(`[sik] sample raw list item (meta=${JSON.stringify(meta)}):`, JSON.stringify(sample, null, 2));
     },
@@ -387,10 +398,22 @@ export async function fetchAllEvents(token, { getPreviousImpacts, rangeMonths, o
     events = events.filter((ev) => !ev.tanggal || ev.tanggal >= cutoff);
   }
 
+  // Detail-fetching (sequential, paced 500ms apart to respect SIK's ~60/min
+  // throttle) is the slow part of a fetch - in 'incremental' mode, an event
+  // already stored from a previous fetch reuses that stored korban/kerugian/
+  // impacts wholesale instead of hitting the detail endpoint again, since
+  // most events don't change after being fetched once. This means a status
+  // update on an older event (e.g. penanganan progressing to "selesai")
+  // won't be picked up automatically - the operator's own "Fetch Sekarang"
+  // (mode: 'full') is how to force a complete detail refresh.
+  const toFetchDetail = incremental && getPreviousEvent
+    ? events.filter((ev) => !getPreviousEvent(ev.uuid))
+    : events;
+
   let loggedSample = false;
   let impactsDone = 0;
-  if (onProgress) onProgress({ phase: 'impacts', current: 0, total: events.length });
-  await mapWithConcurrency(events, 1, async (ev) => {
+  if (onProgress) onProgress({ phase: 'impacts', current: 0, total: toFetchDetail.length });
+  await mapWithConcurrency(toFetchDetail, 1, async (ev) => {
     try {
       const { impacts, totals } = await fetchEventImpacts(token, ev.uuid, { logSample: !loggedSample });
       loggedSample = true;
@@ -407,17 +430,47 @@ export async function fetchAllEvents(token, { getPreviousImpacts, rangeMonths, o
     } catch (err) {
       if (err instanceof SikAuthError) throw err;
       // A single event's detail failing shouldn't wipe out previously-synced
-      // impact data for it, and shouldn't drop the whole sync either - the
-      // korban/kerugian totals stay at mapKejadian's 0 default for this run
-      // (getPreviousImpacts only ever stored the impacts array, not the
-      // separate totals columns, so there isn't a fuller snapshot to fall
-      // back to here).
-      ev.impacts = getPreviousImpacts ? getPreviousImpacts(ev.uuid) : [];
+      // data for it, and shouldn't drop the whole sync either.
+      const prev = getPreviousEvent ? getPreviousEvent(ev.uuid) : null;
+      Object.assign(ev, {
+        impacts: prev?.impacts || [],
+        korbanMeninggal: prev?.korbanMeninggal ?? 0,
+        korbanLukaBerat: prev?.korbanLukaBerat ?? 0,
+        korbanLukaRingan: prev?.korbanLukaRingan ?? 0,
+        korbanLuka: (prev?.korbanLukaBerat ?? 0) + (prev?.korbanLukaRingan ?? 0),
+        korbanHilang: prev?.korbanHilang ?? 0,
+        kerugian: prev?.kerugian ?? 0,
+        bangunanRr: prev?.bangunanRr ?? 0,
+        bangunanRs: prev?.bangunanRs ?? 0,
+        bangunanRb: prev?.bangunanRb ?? 0,
+      });
     } finally {
       impactsDone++;
-      if (onProgress) onProgress({ phase: 'impacts', current: impactsDone, total: events.length });
+      if (onProgress) onProgress({ phase: 'impacts', current: impactsDone, total: toFetchDetail.length });
     }
   }, { delayMs: 500 });
+
+  // Anything skipped above (already known, incremental mode) still needs
+  // its stored totals/impacts spliced back in - only its list-level fields
+  // (tanggal/lokasi/etc, refreshed from this fetch) were freshly mapped.
+  if (incremental && getPreviousEvent) {
+    const fetchedUuids = new Set(toFetchDetail.map((ev) => ev.uuid));
+    for (const ev of events) {
+      if (fetchedUuids.has(ev.uuid)) continue;
+      const prev = getPreviousEvent(ev.uuid);
+      if (!prev) continue;
+      ev.impacts = prev.impacts || [];
+      ev.korbanMeninggal = prev.korbanMeninggal ?? 0;
+      ev.korbanLukaBerat = prev.korbanLukaBerat ?? 0;
+      ev.korbanLukaRingan = prev.korbanLukaRingan ?? 0;
+      ev.korbanLuka = (prev.korbanLukaBerat ?? 0) + (prev.korbanLukaRingan ?? 0);
+      ev.korbanHilang = prev.korbanHilang ?? 0;
+      ev.kerugian = prev.kerugian ?? 0;
+      ev.bangunanRr = prev.bangunanRr ?? 0;
+      ev.bangunanRs = prev.bangunanRs ?? 0;
+      ev.bangunanRb = prev.bangunanRb ?? 0;
+    }
+  }
 
   events.paginationDiag = [diag];
   return events;

@@ -54,7 +54,7 @@ async function attemptSikRelogin() {
   }
 }
 
-async function runFetch(key) {
+async function runFetch(key, { mode = 'full' } = {}) {
   if (key === 'sik' && !isLoggedIn()) {
     const relogged = hasStoredCredentials() && (await attemptSikRelogin());
     if (!relogged) {
@@ -75,11 +75,11 @@ async function runFetch(key) {
       const onProgress = (progress) => db.setSourceStatus('sik', { status: 'loading', progress });
       let events;
       try {
-        events = await fetchAllEvents(admin.token, { getPreviousImpacts: db.getEventImpacts, rangeMonths, onProgress });
+        events = await fetchAllEvents(admin.token, { getPreviousEvent: db.getEventByUuid, rangeMonths, onProgress, mode });
       } catch (err) {
         if (!(err instanceof SikAuthError) || !(await attemptSikRelogin())) throw err;
         admin = db.getAdminConfig();
-        events = await fetchAllEvents(admin.token, { getPreviousImpacts: db.getEventImpacts, rangeMonths, onProgress });
+        events = await fetchAllEvents(admin.token, { getPreviousEvent: db.getEventByUuid, rangeMonths, onProgress, mode });
       }
       const existingUuids = db.getAllEventUuids();
       const newOnes = events
@@ -126,9 +126,16 @@ async function runFetch(key) {
   }
 }
 
+// The timer's own recurring re-fire is the "routine, automatic" fetch -
+// incremental for 'sik' (see fetchAllEvents in sik.js: only page 1, only
+// detail-fetches genuinely new events). Anything explicitly triggered by an
+// operator action (scheduleSourceFetch below - the "Fetch Sekarang" button,
+// a Rentang Data change, a fresh login, or an interval change) does a full
+// walk and full detail refresh instead, so there's still a way to force a
+// complete resync (e.g. to pick up a status change on an older event).
 function armTimer(key, intervalMin) {
   if (timers[key]) clearTimeout(timers[key]);
-  timers[key] = setTimeout(() => runFetch(key), intervalMin * 60000);
+  timers[key] = setTimeout(() => runFetch(key, { mode: 'incremental' }), intervalMin * 60000);
 }
 
 export function scheduleSourceFetch(key) {
@@ -136,7 +143,7 @@ export function scheduleSourceFetch(key) {
     clearTimeout(timers[key]);
     delete timers[key];
   }
-  return runFetch(key);
+  return runFetch(key, { mode: 'full' });
 }
 
 export function onIntervalChange(key, minutes) {

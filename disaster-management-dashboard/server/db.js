@@ -249,10 +249,15 @@ function rowToEvent(row) {
   };
 }
 
-export function getEventImpacts(uuid) {
-  const row = db.prepare('SELECT impacts_json FROM events WHERE uuid = ?').get(uuid);
-  if (!row) return [];
-  return JSON.parse(row.impacts_json || '[]');
+// Used by fetchAllEvents (sik.js) both as the failure-fallback for a
+// detail-fetch that errors out, and to skip detail-fetching altogether for
+// an event this account already has stored (see the 'incremental' fetch
+// mode in scheduler.js) - reusing the whole previously-stored event instead
+// of just its impacts array means korban/kerugian/bangunan totals survive
+// too, not just the impact cards.
+export function getEventByUuid(uuid) {
+  const row = db.prepare('SELECT * FROM events WHERE uuid = ?').get(uuid);
+  return row ? rowToEvent(row) : null;
 }
 
 export function getEvents({ start, end } = {}) {
