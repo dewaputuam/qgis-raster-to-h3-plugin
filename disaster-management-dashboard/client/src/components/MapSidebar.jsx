@@ -24,10 +24,10 @@ export default function MapSidebar({
 }) {
   const totalKejadian = events.length;
   const korbanMeninggal = events.reduce((s, e) => s + (e.korbanMeninggal || 0), 0);
-  const totalKerugian = events.reduce(
-    (s, e) => s + (e.kerugian || 0) + (e.impacts || []).reduce((s2, im) => s2 + (im.totalKerugian || 0), 0),
-    0
-  );
+  // e.kerugian is already the detail endpoint's own event-level total (see
+  // fetchAllEvents in sik.js) - adding each impact's totalKerugian on top
+  // would double-count the same figure.
+  const totalKerugian = events.reduce((s, e) => s + (e.kerugian || 0), 0);
   const kabupatenOptions = useMemo(() => [...new Set(regions.map((r) => r.kabupaten))].sort(), [regions]);
   const sorted = [...filteredEvents].sort((a, b) => `${b.tanggal} ${b.jam}`.localeCompare(`${a.tanggal} ${a.jam}`));
 

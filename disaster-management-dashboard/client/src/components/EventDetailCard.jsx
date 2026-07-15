@@ -75,8 +75,13 @@ function Chip({ children }) {
 export default function EventDetailCard({ event, regions, color, onClose }) {
   const [infoOpen, setInfoOpen] = useState(false);
   const impacts = event.impacts || [];
-  const totalKorban = impacts.reduce((s, im) => s + (im.totalKorban || 0), 0);
-  const totalKerugian = impacts.reduce((s, im) => s + (im.totalKerugian || 0), 0);
+  // `impacts` has no reliable per-area victim count of its own - fall back
+  // to the event-level totals (from the detail endpoint's own korban_summary/
+  // total_kerugian, see fetchAllEvents in sik.js) the same way Hero.jsx does.
+  const totalKorban =
+    impacts.reduce((s, im) => s + (im.totalKorban || 0), 0) ||
+    (event.korbanMeninggal || 0) + (event.korbanLuka || 0) + (event.korbanHilang || 0);
+  const totalKerugian = impacts.reduce((s, im) => s + (im.totalKerugian || 0), 0) || event.kerugian || 0;
   const totalMengungsi = impacts.reduce((s, im) => s + (im.mengungsiL || 0) + (im.mengungsiP || 0), 0);
 
   return (

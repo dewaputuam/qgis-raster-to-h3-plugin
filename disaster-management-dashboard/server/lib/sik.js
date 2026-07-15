@@ -27,42 +27,48 @@ export async function sikLogin(username, password) {
   return { token, user: body.data.user || null };
 }
 
-// The guide never documents a kabupaten field on the kejadian record itself
-// (only kecamatan.kecamatan / desa.kelurahan, both nested join objects) - but
-// since those two ARE nested joins, the real API very plausibly also returns
-// an equivalent kabkota/kabupaten join directly on each event. These are
-// guessed shapes (mirroring the documented kecamatan/desa pattern) to try
-// first, since a value straight from the API is strictly more trustworthy
-// than anything derived indirectly - confirm/adjust the field name once a
-// real raw sample has been logged (see fetchAllEvents' logSample).
+function titleCaseKabupaten(s) {
+  return s.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+// Confirmed against a real production response (a raw list-item sample
+// logged via onListSample): each kejadian record's `kabupaten` join is an
+// object like `{ subgroup: "BADUNG", id, id_ref, ... }` - `subgroup` is the
+// actual kabupaten name, uppercased. An earlier version checked for
+// `k.kabkota`/`k.kabupaten`/`k.nama`/etc, none of which exist on the real
+// object, so this always silently fell through to the (unreliable)
+// kecamatan cross-check below.
 function directKabupatenFromRaw(raw) {
   const k = raw.kabkota || raw.kabupaten;
   if (!k) return null;
   if (typeof k === 'string') return k;
-  return k.kabkota || k.kabupaten || k.nama || k.nama_kabkota || k.nama_kabupaten || null;
+  const name = k.subgroup || k.kabkota || k.kabupaten || k.nama || k.nama_kabkota || k.nama_kabupaten || null;
+  return name ? titleCaseKabupaten(name) : null;
 }
 
-// Maps the fields documented in the SIK access guide. The guide only documents
-// the subset of fields used for chat-style reporting (§4.2) - korban/kerugian/impacts
-// come from the detail endpoint and aren't fully specified, so they default to
-// empty/zero until the real payload shape is confirmed against a live account.
+// Maps the kejadian list-item fields, cross-referenced against a real
+// production response rather than the access guide's own reference code
+// (which never fetches beyond page 1 and doesn't document every field).
 //
 // `kabupaten` resolution order, most to least trustworthy:
-// 1. A kabkota/kabupaten field straight off the raw record, if the API
-//    actually returns one (see directKabupatenFromRaw above).
+// 1. The record's own `kabupaten.subgroup` field (see directKabupatenFromRaw)
+//    - straight from the API, no inference involved.
 // 2. The event's own `kecamatan` field cross-checked against the official
-//    Kemendagri kecamatan->kabupaten table (kabupatenFromKecamatan) - exact
-//    and independent of any assumption about the SIK API's internal IDs.
-// 3. The name the caller already knew from the loop (queried one kabupaten
-//    at a time via kabkota_id - see fetchAllEvents), which depends on the SIK
-//    guide's kabkota_id -> kabupaten table (§5). That table turned out to not
-//    match the official Kemendagri numbering from position 3 onward
-//    (Buleleng/Badung and everything after were shifted by one) -
-//    config.json's kabkotaIds has been corrected, but it's still an inference
-//    about the SIK API's internal IDs, so it's only the last resort here.
-function mapKejadian(raw, kabupatenName) {
+//    Kemendagri kecamatan->kabupaten table (kabupatenFromKecamatan) - a
+//    fallback for the rare case `kabupaten.subgroup` is missing.
+//
+// Victim/damage/loss figures (korbanMeninggal, korbanLuka*, bangunanR*,
+// kerugian) are deliberately left at 0 here, NOT read from this record: the
+// list endpoint's own KORBAN_0/1/2 and BANGUNAN_0/1/2 fields have an
+// undocumented category order ("urutan kategori belum dikonfirmasi
+// persis"), so guessing which index means what would just trade one silent
+// wrong-data bug for another. The detail endpoint's `korban_summary` object
+// names each category explicitly (meninggal/luka_berat/luka_ringan/hilang)
+// - fetchAllEvents overwrites these fields with that authoritative source
+// once the detail fetch completes for each event.
+function mapKejadian(raw) {
   const kecamatan = (raw.kecamatan && raw.kecamatan.kecamatan) || '';
-  const resolvedKabupaten = directKabupatenFromRaw(raw) || kabupatenFromKecamatan(kecamatan) || kabupatenName;
+  const resolvedKabupaten = directKabupatenFromRaw(raw) || kabupatenFromKecamatan(kecamatan) || '';
   return {
     uuid: raw.uuid,
     tanggal: raw.DATE_KEJ || '',
@@ -73,49 +79,62 @@ function mapKejadian(raw, kabupatenName) {
     kabupaten: resolvedKabupaten,
     kecamatan,
     desa: (raw.desa && raw.desa.kelurahan) || '',
-    korbanMeninggal: Number(raw.KORBAN_MENINGGAL ?? 0),
-    korbanLuka: Number(raw.KORBAN_LUKA ?? 0),
-    korbanHilang: Number(raw.KORBAN_HILANG ?? 0),
-    bangunanRr: Number(raw.BANGUNAN_RR ?? 0),
-    bangunanRs: Number(raw.BANGUNAN_RS ?? 0),
-    bangunanRb: Number(raw.BANGUNAN_RB ?? 0),
-    kerugian: Number(raw.KERUGIAN ?? 0),
+    korbanMeninggal: 0,
+    korbanLuka: 0,
+    korbanLukaBerat: 0,
+    korbanLukaRingan: 0,
+    korbanHilang: 0,
+    bangunanRr: 0,
+    bangunanRs: 0,
+    bangunanRb: 0,
+    kerugian: 0,
     statusVerifikasi: raw.STATUS_VERIFIKASI === 1 ? 1 : 0,
     lat: parseFloat(raw.LATTITUDE),
     lng: parseFloat(raw.LONGITUDE),
-    impacts: Array.isArray(raw.impacts) ? raw.impacts : [],
+    impacts: [],
   };
 }
 
-// The impact/dampak record's own field names aren't documented either - the
-// guide only says the detail endpoint (§4.3) "berisi area terdampak, data
-// korban, kerusakan, dan riwayat penanganan". Each impact record carries the
-// parent kejadian's `uuid` (a plain back-reference, not something we need to
-// join on ourselves since we already fetch one specific event's detail at a
-// time) - kept here so it round-trips if the UI ever needs it directly.
+// One entry per `area_terdampak` record from the detail endpoint - the
+// actual field names, cross-referenced against a real production response:
+// LOKASI, TGL_LAPORAN_MASUK, PROGRESS, MENGUNGSI_L/P, SUMBER_INFO,
+// CONTACT_PERSON, NOMOR_HP, KETERANGAN, plus nested `kerusakan` (each with
+// its own RR/RS/RB/TOTAL_KERUGIAN) and `penanganan` (each with TIM/
+// TINDAKAN) arrays - not the flat tglLapor/totalKerugian/penangananTim
+// fields an earlier version guessed at (none of which exist on the real
+// object, so every impact card and per-area total previously read as
+// blank/zero no matter what SIK actually returned).
 function mapImpact(raw) {
+  const kerusakan = Array.isArray(raw.kerusakan) ? raw.kerusakan : [];
+  const penanganan = Array.isArray(raw.penanganan) ? raw.penanganan : [];
   return {
-    idDetail: raw.idDetail ?? raw.ID_DETAIL ?? raw.id ?? null,
-    kejadianUuid: raw.uuid ?? null,
-    tglLaporan: raw.tglLaporan ?? raw.TGL_LAPOR ?? raw.tgl_lapor ?? '',
-    progress: Number(raw.progress ?? raw.PROGRESS ?? 0),
-    mengungsiL: Number(raw.mengungsiL ?? raw.MENGUNGSI_L ?? 0),
-    mengungsiP: Number(raw.mengungsiP ?? raw.MENGUNGSI_P ?? 0),
-    totalKerugian: Number(raw.totalKerugian ?? raw.TOTAL_KERUGIAN ?? 0),
-    totalKorban: Number(raw.totalKorban ?? raw.TOTAL_KORBAN ?? 0),
-    totalKerusakan: Number(raw.totalKerusakan ?? raw.TOTAL_KERUSAKAN ?? 0),
-    korbanMeninggal: Number(raw.korbanMeninggal ?? raw.KORBAN_MENINGGAL ?? 0),
-    korbanLukaBerat: Number(raw.korbanLukaBerat ?? raw.KORBAN_LUKA_BERAT ?? 0),
-    korbanLukaRingan: Number(raw.korbanLukaRingan ?? raw.KORBAN_LUKA_RINGAN ?? 0),
-    korbanHilang: Number(raw.korbanHilang ?? raw.KORBAN_HILANG ?? 0),
-    sumberInfo: raw.sumberInfo ?? raw.SUMBER_INFO ?? '',
-    contactPerson: raw.contactPerson ?? raw.CONTACT_PERSON ?? '',
-    nomorHp: raw.nomorHp ?? raw.NOMOR_HP ?? '',
-    penangananTim: raw.penangananTim ?? raw.PENANGANAN_TIM ?? '',
-    penangananTindakan: raw.penangananTindakan ?? raw.PENANGANAN_TINDAKAN ?? '',
+    idDetail: raw.ID_DETAIL ?? null,
+    lokasi: raw.LOKASI || '',
+    tglLaporan: raw.TGL_LAPORAN_MASUK || '',
+    jamLaporan: raw.JAM_LAPORAN_MASUK || '',
+    progress: Number(raw.PROGRESS ?? 0),
+    mengungsiL: Number(raw.MENGUNGSI_L ?? 0),
+    mengungsiP: Number(raw.MENGUNGSI_P ?? 0),
+    keterangan: raw.KETERANGAN || '',
+    sumberInfo: raw.SUMBER_INFO || '',
+    contactPerson: raw.CONTACT_PERSON || '',
+    nomorHp: raw.NOMOR_HP || '',
+    // A single impacted area can have several damaged structures and
+    // several response actions logged over time - sum the former, join the
+    // latter, rather than assuming there's only ever one of each.
+    totalKerugian: kerusakan.reduce((s, k) => s + (parseFloat(k.TOTAL_KERUGIAN) || 0), 0),
+    penangananTim: penanganan.map((p) => p.TIM).filter(Boolean).join('; '),
+    penangananTindakan: penanganan.map((p) => p.TINDAKAN).filter(Boolean).join('; '),
   };
 }
 
+// The detail endpoint's real shape (confirmed against a live account):
+// { kejadian, area_terdampak: [...], total_kerugian, total_korban,
+//   total_kerusakan, korban_summary: { meninggal, luka_berat, luka_ringan,
+//   hilang } } - not `data.impacts`/`data.dampak`/`data.detail_dampak` as an
+// earlier version guessed (none of those keys exist on the real response,
+// so `rawImpacts` was always `[]` and every impact card and korban/kerugian
+// total silently showed blank/zero regardless of what SIK actually had).
 async function fetchEventImpacts(token, uuid, { logSample } = {}) {
   const res = await fetchWithRetry(`${config.sikBaseUrl}/lap-kejadian/${uuid}`, {
     headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
@@ -125,18 +144,47 @@ async function fetchEventImpacts(token, uuid, { logSample } = {}) {
   const body = await res.json();
   const data = body && body.data;
   if (logSample) console.log(`[sik] sample raw detail for uuid=${uuid}:`, JSON.stringify(data, null, 2));
-  const rawImpacts = (data && (data.impacts || data.dampak || data.detail_dampak || (Array.isArray(data) ? data : null))) || [];
-  return rawImpacts.map(mapImpact);
+  const areaTerdampak = (data && Array.isArray(data.area_terdampak)) ? data.area_terdampak : [];
+  const korbanSummary = (data && data.korban_summary) || {};
+  // Building-damage severity (ringan/sedang/berat) has no event-level
+  // summary field - only an ambiguous BANGUNAN_0/1/2 at the list level
+  // (see mapKejadian) - so it's summed here from every kerusakan record
+  // across every impacted area, where RR/RS/RB are named explicitly.
+  let bangunanRr = 0, bangunanRs = 0, bangunanRb = 0;
+  for (const area of areaTerdampak) {
+    for (const k of Array.isArray(area.kerusakan) ? area.kerusakan : []) {
+      bangunanRr += Number(k.RR) || 0;
+      bangunanRs += Number(k.RS) || 0;
+      bangunanRb += Number(k.RB) || 0;
+    }
+  }
+  return {
+    impacts: areaTerdampak.map(mapImpact),
+    totals: {
+      kerugian: Number((data && data.total_kerugian) ?? 0),
+      korbanMeninggal: Number(korbanSummary.meninggal ?? 0),
+      korbanLukaBerat: Number(korbanSummary.luka_berat ?? 0),
+      korbanLukaRingan: Number(korbanSummary.luka_ringan ?? 0),
+      korbanHilang: Number(korbanSummary.hilang ?? 0),
+      bangunanRr, bangunanRs, bangunanRb,
+    },
+  };
 }
 
-// Simple concurrency-limited map so we don't fire off one request per event
-// all at once against a small government API.
-async function mapWithConcurrency(items, limit, fn) {
+// Concurrency-limited map, with an optional per-dispatch delay - so we
+// don't fire off requests faster than SIK's own documented ~60/minute
+// throttle allows. A companion QGIS plugin's own notes record 8-way (or
+// any) concurrent detail-fetching as the direct cause of repeated 429s
+// against this same API, resolved there by going fully sequential with a
+// mandatory ~500ms gap between requests - matched here via delayMs with
+// limit=1 (see fetchAllEvents).
+async function mapWithConcurrency(items, limit, fn, { delayMs = 0 } = {}) {
   const results = new Array(items.length);
   let next = 0;
   async function worker() {
     while (next < items.length) {
       const i = next++;
+      if (delayMs && i > 0) await sleep(delayMs);
       results[i] = await fn(items[i], i);
     }
   }
@@ -178,33 +226,35 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// SIK is a small government API, not built to take nine simultaneous list
-// requests plus a burst of per-event detail requests (or, it turns out,
-// several kabupaten offices' logins landing close together) - retries a 429
-// (rate limited) or 5xx (server-side hiccup) with backoff instead of failing
-// outright, honoring Retry-After when the server sends one. Deliberately
-// does NOT retry 401/other 4xx - those are real rejections (wrong
-// credentials, bad request), not transient load issues.
+// SIK enforces a documented ~60 requests/minute throttle (Laravel's default
+// sliding-window throttle middleware); a companion QGIS plugin's own notes
+// record the backoff that actually works against it in practice: wait 35s,
+// retry; wait 70s, retry; wait 70s, retry; give up after 3 attempts. An
+// earlier version here waited only 1.5s/3s/4.5s, which doesn't come close
+// to respecting a 60/minute budget and likely kept re-triggering 429s on
+// retry rather than recovering from them. Retry-After is still honored
+// first when the server sends one. Deliberately does NOT retry 401/other
+// 4xx - those are real rejections (wrong credentials, bad request), not
+// transient load issues.
+const RETRY_BACKOFF_SECONDS = [35, 70, 70];
+
 async function fetchWithRetry(url, options, { maxRetries = 3 } = {}) {
   for (let attempt = 0; ; attempt++) {
     const res = await fetch(url, options);
     const transient = res.status === 429 || res.status >= 500;
     if (!transient || attempt >= maxRetries) return res;
     const retryAfterSec = Number(res.headers.get('retry-after'));
-    await sleep(retryAfterSec > 0 ? retryAfterSec * 1000 : (attempt + 1) * 1500);
+    const fallbackSec = RETRY_BACKOFF_SECONDS[Math.min(attempt, RETRY_BACKOFF_SECONDS.length - 1)];
+    await sleep((retryAfterSec > 0 ? retryAfterSec : fallbackSec) * 1000);
   }
 }
 
-// SIK's real pagination envelope isn't documented, and this has only ever
-// been tested against mock servers built to match a *guess* at the shape
-// (Laravel paginate() nested once under `data`: data.data/current_page/
-// last_page/total). A live deployment could just as easily nest an extra
-// `meta` layer (data.meta.last_page, common for API Resource collections)
-// or put the items straight on `data` with pagination fields as siblings
-// of it instead of nested inside. All three are tried here instead of
-// assuming only the first shape, since guessing wrong silently truncates
-// every account to page 1 with no error at all - exactly the failure mode
-// under investigation ("still only 69 items no matter the range").
+// A real production response confirmed the first shape (Laravel paginate()
+// nested once under `data`: data.data/current_page/last_page/total). The
+// other two (an extra `meta` layer, or pagination fields as siblings of a
+// flat `data` array) are kept as fallbacks in case a different SIK
+// deployment nests it differently - guessing wrong here would silently
+// truncate every account to page 1 with no error at all.
 function extractPagedShape(body) {
   const d = body && body.data;
   if (Array.isArray(d)) {
@@ -226,28 +276,21 @@ function extractPagedShape(body) {
   return { items: [], lastPage: null, total: null };
 }
 
-// The guide's own note ("filter tanggal via parameter query kadang tidak
-// konsisten di sisi server") plus a real account confirmed by direct
-// observation - the item count and date range returned never move no
-// matter what "Rentang Data" is set to, even though the client-side cutoff
-// filter (cutoffDateString) is independently verified to work when older
-// data is actually present. The likeliest explanation left is that SIK's
-// list endpoint itself defaults to only recent data server-side unless a
-// date query param is passed, and neither this app nor the guide's own
-// reference code (which never sends one either) has ever supplied one.
-// The exact param name isn't documented and couldn't be inspected via the
-// portal's own UI (it has no browser devtools of its own to inspect - that
-// belongs to the browser, not to SIK), so several of the most common
-// Indonesian gov-API conventions are sent at once here on a best-effort
-// basis. Unrecognized query params are harmless (typical REST/Laravel
-// backends simply ignore them), so this can't make things worse even if
-// every guess misses - and the client-side cutoff filter in fetchAllEvents
-// still applies regardless, so correctness never depends on one of these
-// guesses actually landing.
+// `tgl_kejadian` is the confirmed-working date-range parameter for this
+// same live API, from a companion QGIS plugin's own trial-and-error notes:
+// a single param formatted `YYYY-MM-DD - YYYY-MM-DD` (matching DATE_KEJ's
+// own date format - an earlier attempt at `DD/MM/YYYY - DD/MM/YYYY`,
+// matching the official Postman collection, was silently ignored: still
+// 200 OK, just with no filtering applied). The other guessed names from an
+// earlier version are kept alongside as a no-cost safety net in case this
+// account's server version differs - unrecognized query params are
+// harmless (typical Laravel backends simply ignore them) - but
+// `tgl_kejadian` is the one with actual confirmation behind it.
 function dateRangeParams(dateRange) {
   if (!dateRange) return '';
   const { from, to } = dateRange;
   return (
+    `&tgl_kejadian=${encodeURIComponent(`${from} - ${to}`)}` +
     `&tanggal_awal=${from}&tanggal_akhir=${to}` +
     `&tanggal_dari=${from}&tanggal_sampai=${to}` +
     `&start_date=${from}&end_date=${to}` +
@@ -255,18 +298,23 @@ function dateRangeParams(dateRange) {
   );
 }
 
-async function fetchKejadianPage(kabkotaId, token, page, dateRange) {
-  const url = `${config.sikBaseUrl}/lap-kejadian?kabkota=${kabkotaId}&per_page=200&page=${page}${dateRangeParams(dateRange)}`;
-  // Printed so an operator can confirm, straight from their own server
-  // console, exactly which date-param guesses were actually sent - no
-  // browser devtools needed (those belong to whatever browser someone
-  // views SIK's own portal in, not to this app or to SIK itself).
-  if (page === 1 && dateRange) console.log(`[sik] requesting with date-range guesses: ${url}`);
+async function fetchKejadianPage(token, page, dateRange) {
+  // No `kabkota` filter: omitting it entirely returns every kabupaten's
+  // events in one paginated stream (confirmed working in a companion QGIS
+  // plugin, "v13"), and a USER_KABKOTA account is restricted server-side to
+  // its own kabupaten's data regardless of what's requested - so there's no
+  // need to loop over per-kabupaten ids and guess which numeric id belongs
+  // to which kabupaten (a guess that was confirmed wrong for at least two
+  // kabupaten against a live account). One combined stream is also far
+  // fewer requests than nine separate per-kabupaten ones, which matters
+  // against SIK's ~60 requests/minute throttle.
+  const url = `${config.sikBaseUrl}/lap-kejadian?per_page=200&page=${page}${dateRangeParams(dateRange)}`;
+  if (page === 1 && dateRange) console.log(`[sik] requesting with date-range params: ${url}`);
   const res = await fetchWithRetry(url, {
     headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
   });
   if (res.status === 401) throw new SikAuthError('Token SIK kedaluwarsa atau tidak valid.');
-  if (!res.ok) throw new Error(`SIK lap-kejadian HTTP ${res.status} (kabkota=${kabkotaId}, page=${page})`);
+  if (!res.ok) throw new Error(`SIK lap-kejadian HTTP ${res.status} (page=${page})`);
   const body = await res.json();
   return extractPagedShape(body);
 }
@@ -274,25 +322,25 @@ async function fetchKejadianPage(kabkotaId, token, page, dateRange) {
 // `last_page`/`total` metadata (whatever shape it turned out to be in) is
 // only used as a hint/cap here, never trusted on its own - the real
 // stopping condition is "the server gave us nothing new", so this keeps
-// walking pages even when metadata is missing (lastPage === null) or wrong,
+// walking pages even when metadata is missing (lastPage == null) or wrong,
 // and stops as soon as a page comes back empty or repeats uuids we already
 // have (a server that quietly clamps ?page= back to page 1 for anything out
 // of range, rather than erroring, would otherwise loop forever re-adding the
 // same page). MAX_PAGES is purely a runaway-loop safety net.
-const MAX_PAGES_PER_KABKOTA = 200;
+const MAX_PAGES = 500;
 
-async function fetchAllKejadianForKabkota(kabkotaId, kabupatenName, token, { onListSample, dateRange } = {}) {
-  const first = await fetchKejadianPage(kabkotaId, token, 1, dateRange);
+async function fetchAllKejadian(token, { onListSample, dateRange } = {}) {
+  const first = await fetchKejadianPage(token, 1, dateRange);
   const seenUuids = new Set(first.items.map((it) => it.uuid).filter(Boolean));
   let allItems = first.items;
   let pagesFetched = first.items.length > 0 ? 1 : 0;
   let page = 2;
   while (
     allItems.length > 0 &&
-    pagesFetched < MAX_PAGES_PER_KABKOTA &&
+    pagesFetched < MAX_PAGES &&
     (first.lastPage == null || page <= first.lastPage)
   ) {
-    const { items } = await fetchKejadianPage(kabkotaId, token, page, dateRange);
+    const { items } = await fetchKejadianPage(token, page, dateRange);
     if (items.length === 0) break;
     const newItems = items.filter((it) => !it.uuid || !seenUuids.has(it.uuid));
     if (newItems.length === 0) break;
@@ -301,8 +349,8 @@ async function fetchAllKejadianForKabkota(kabkotaId, kabupatenName, token, { onL
     pagesFetched++;
     page++;
   }
-  if (onListSample) {
-    onListSample(kabkotaId, kabupatenName, first.items[0] || null, {
+  if (onListSample && first.items[0]) {
+    onListSample(first.items[0], {
       lastPageMeta: first.lastPage,
       totalMeta: first.total,
       page1Count: first.items.length,
@@ -310,99 +358,29 @@ async function fetchAllKejadianForKabkota(kabkotaId, kabupatenName, token, { onL
       totalFetched: allItems.length,
     });
   }
-  return { events: allItems.map((raw) => mapKejadian(raw, kabupatenName)), diag: {
-    kabupaten: kabupatenName, kabkotaId,
-    lastPageMeta: first.lastPage, totalMeta: first.total,
-    page1Count: first.items.length, pagesFetched, totalFetched: allItems.length,
-  } };
+  return {
+    events: allItems.map(mapKejadian),
+    diag: {
+      lastPageMeta: first.lastPage, totalMeta: first.total,
+      page1Count: first.items.length, pagesFetched, totalFetched: allItems.length,
+    },
+  };
 }
 
-// The numeric id this app sends as `?kabkota=` is SIK's own internal
-// numbering, not the official Kemendagri code - and it does NOT reliably
-// match config.json's guessed name->id table. Confirmed against a live
-// account's console output: querying kabkota=1 (config guesses "Jembrana")
-// actually returned Badung's events (kabupaten.subgroup="BADUNG",
-// id_ref=3); kabkota=2 (config guesses "Tabanan") actually returned
-// Bangli's (id_ref=6). Only kabkota=7 (Karangasem) happened to line up.
-// A scoped kabupaten-office account that only ever queries its assumed id
-// (see fetchAllEvents below) would then silently keep pulling a DIFFERENT
-// kabupaten's data forever - it would look like the account has no events
-// at all once anything filters by the (correct) scope name, which doesn't
-// match what actually came back. This samples page 1 of every configured
-// id and reads the reliable `kabupaten.subgroup` field SIK returns on each
-// record to learn the true id -> kabupaten mapping, so callers can use a
-// verified id instead of the guess. Caching this (see scheduler.js) means
-// the discovery cost (9 lightweight requests) is paid once, not every fetch.
-export async function discoverKabkotaMapping(token) {
-  const ids = Object.values(config.kabkotaIds);
-  const mapping = {};
-  await mapWithConcurrency(ids, 3, async (id) => {
-    try {
-      const { items } = await fetchKejadianPage(id, token, 1);
-      const subgroup = items[0] && items[0].kabupaten && items[0].kabupaten.subgroup;
-      if (subgroup) mapping[id] = titleCaseKabupaten(subgroup);
-    } catch (err) {
-      if (err instanceof SikAuthError) throw err;
-      // A single id failing (e.g. genuinely zero events ever) shouldn't
-      // block discovering the rest.
-    }
-  });
-  return mapping;
-}
-
-function titleCaseKabupaten(subgroup) {
-  return subgroup.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-export async function fetchAllEvents(token, { getPreviousImpacts, rangeMonths, kabupatenScope, kabkotaIdOverrides, onProgress } = {}) {
-  // kabkotaIdOverrides carries any id->kabupaten corrections learned by
-  // discoverKabkotaMapping (see scheduler.js) - preferred over the
-  // config.json guess wherever a correction has actually been discovered.
-  const allEntries = Object.entries(config.kabkotaIds).map(([name, id]) => {
-    const override = kabkotaIdOverrides && Object.entries(kabkotaIdOverrides).find(([, n]) => n === name);
-    return [name, override ? Number(override[0]) : id];
-  });
-  // A kabupaten-office account only ever needs its own kabupaten's data -
-  // pulling all nine (then discarding 8/9 of it at read time via the scope
-  // filter in routes/api.js) wastes requests against a real, rate-limited
-  // external API for no benefit, and was the direct cause of a 429 for a
-  // scoped account that had no reason to be fetching every other kabupaten.
-  const kabkotaEntries = kabupatenScope
-    ? allEntries.filter(([name]) => name === kabupatenScope)
-    : allEntries;
+export async function fetchAllEvents(token, { getPreviousImpacts, rangeMonths, onProgress } = {}) {
   // Sent as a best-effort server-side date filter (see dateRangeParams) in
   // addition to the client-side cutoff filter further down - if SIK's list
   // endpoint really does default to recent-only data server-side, this is
   // the only way to ever see further back regardless of pagination.
   const dateRange = rangeMonths ? { from: cutoffDateString(rangeMonths), to: todayDateString() } : null;
-  let loggedListSample = false;
-  let listDone = 0;
-  const results = await Promise.all(
-    kabkotaEntries.map(async ([kabupatenName, id], i) => {
-      // Stagger the start of each request slightly instead of firing all of
-      // them in the same instant - still concurrent, just not a single burst.
-      await sleep(i * 250);
-      const { events: mapped, diag } = await fetchAllKejadianForKabkota(id, kabupatenName, token, {
-        dateRange,
-        onListSample: (kabkotaId, name, sample, meta) => {
-          if (loggedListSample) return;
-          loggedListSample = true;
-          console.log(`[sik] sample raw list item (kabkota=${kabkotaId}, expected kabupaten=${name}, meta=${JSON.stringify(meta)}):`, JSON.stringify(sample, null, 2));
-        },
-      });
-      listDone++;
-      if (onProgress) onProgress({ phase: 'list', current: listDone, total: kabkotaEntries.length });
-      return { mapped, diag };
-    })
-  );
-  let events = results.flatMap((r) => r.mapped);
-  // Per-kabupaten pagination diagnostics (page count, per-page item count,
-  // whatever last_page/total metadata the server sent) - surfaced up to
-  // Kelola Data so an operator can see directly on the page whether the
-  // "still stuck at N items" issue is SIK's own data ceiling (pagesFetched
-  // === 1, lastPageMeta === 1 or null) or pagination actually being cut
-  // short, without needing to dig through the server's console output.
-  const paginationDiag = results.map((r) => r.diag);
+  const { events: rawEvents, diag } = await fetchAllKejadian(token, {
+    dateRange,
+    onListSample: (sample, meta) => {
+      console.log(`[sik] sample raw list item (meta=${JSON.stringify(meta)}):`, JSON.stringify(sample, null, 2));
+    },
+  });
+  let events = rawEvents;
+  if (onProgress) onProgress({ phase: 'list', current: 1, total: 1 });
 
   if (rangeMonths) {
     const cutoff = cutoffDateString(rangeMonths);
@@ -412,21 +390,35 @@ export async function fetchAllEvents(token, { getPreviousImpacts, rangeMonths, k
   let loggedSample = false;
   let impactsDone = 0;
   if (onProgress) onProgress({ phase: 'impacts', current: 0, total: events.length });
-  await mapWithConcurrency(events, 8, async (ev) => {
+  await mapWithConcurrency(events, 1, async (ev) => {
     try {
-      ev.impacts = await fetchEventImpacts(token, ev.uuid, { logSample: !loggedSample });
+      const { impacts, totals } = await fetchEventImpacts(token, ev.uuid, { logSample: !loggedSample });
       loggedSample = true;
+      ev.impacts = impacts;
+      ev.korbanMeninggal = totals.korbanMeninggal;
+      ev.korbanLukaBerat = totals.korbanLukaBerat;
+      ev.korbanLukaRingan = totals.korbanLukaRingan;
+      ev.korbanLuka = totals.korbanLukaBerat + totals.korbanLukaRingan;
+      ev.korbanHilang = totals.korbanHilang;
+      ev.kerugian = totals.kerugian;
+      ev.bangunanRr = totals.bangunanRr;
+      ev.bangunanRs = totals.bangunanRs;
+      ev.bangunanRb = totals.bangunanRb;
     } catch (err) {
       if (err instanceof SikAuthError) throw err;
       // A single event's detail failing shouldn't wipe out previously-synced
-      // impact data for it, and shouldn't drop the whole sync either.
+      // impact data for it, and shouldn't drop the whole sync either - the
+      // korban/kerugian totals stay at mapKejadian's 0 default for this run
+      // (getPreviousImpacts only ever stored the impacts array, not the
+      // separate totals columns, so there isn't a fuller snapshot to fall
+      // back to here).
       ev.impacts = getPreviousImpacts ? getPreviousImpacts(ev.uuid) : [];
     } finally {
       impactsDone++;
       if (onProgress) onProgress({ phase: 'impacts', current: impactsDone, total: events.length });
     }
-  });
+  }, { delayMs: 500 });
 
-  events.paginationDiag = paginationDiag;
+  events.paginationDiag = [diag];
   return events;
 }

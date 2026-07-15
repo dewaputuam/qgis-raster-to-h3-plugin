@@ -84,9 +84,13 @@ export default function ReportPanel({ events, isMobile, onOpenMap, kabupatenScop
   const total = events.length;
   const titikDampak = events.reduce((s, e) => s + (e.impacts || []).length, 0);
   const wilayahTerdampak = new Set(events.map((e) => (kabupatenScope ? e.kecamatan : e.kabupaten)).filter(Boolean)).size;
+  // korbanLukaBerat/Ringan (and kerugian below) come from the detail
+  // endpoint's own korban_summary/total_kerugian fields (see fetchAllEvents
+  // in sik.js), which are event-level totals - not summed from `impacts`,
+  // which has no reliable per-area victim/loss breakdown of its own.
   const meninggal = events.reduce((s, e) => s + (e.korbanMeninggal || 0), 0);
-  const lukaBerat = events.reduce((s, e) => s + (e.impacts || []).reduce((s2, im) => s2 + (im.korbanLukaBerat || 0), 0), 0);
-  const lukaRingan = events.reduce((s, e) => s + (e.impacts || []).reduce((s2, im) => s2 + (im.korbanLukaRingan || 0), 0), 0);
+  const lukaBerat = events.reduce((s, e) => s + (e.korbanLukaBerat || 0), 0);
+  const lukaRingan = events.reduce((s, e) => s + (e.korbanLukaRingan || 0), 0);
   const hilang = events.reduce((s, e) => s + (e.korbanHilang || 0), 0);
   const mengungsi = events.reduce(
     (s, e) => s + (e.impacts || []).reduce((s2, im) => s2 + (im.mengungsiL || 0) + (im.mengungsiP || 0), 0),
@@ -95,9 +99,7 @@ export default function ReportPanel({ events, isMobile, onOpenMap, kabupatenScop
   const rusakBerat = events.reduce((s, e) => s + (e.bangunanRb || 0), 0);
   const rusakSedang = events.reduce((s, e) => s + (e.bangunanRs || 0), 0);
   const rusakRingan = events.reduce((s, e) => s + (e.bangunanRr || 0), 0);
-  const nilaiKerusakan = formatRupiah(
-    events.reduce((s, e) => s + (e.kerugian || 0) + (e.impacts || []).reduce((s2, im) => s2 + (im.totalKerugian || 0), 0), 0)
-  );
+  const nilaiKerusakan = formatRupiah(events.reduce((s, e) => s + (e.kerugian || 0), 0));
 
   return (
     <div style={{ minWidth: 0 }}>

@@ -7,20 +7,21 @@ import { scheduleSourceFetch, onIntervalChange } from '../lib/scheduler.js';
 import { fetchCuaca } from '../lib/bmkg.js';
 import { encrypt } from '../lib/crypto.js';
 import { isPointInKabupaten } from '../lib/kabupatenPolygons.js';
-import { detectKabupatenScope } from '../lib/kabupatenScope.js';
+import { resolveKabupatenScope } from '../lib/kabupatenScope.js';
 
 export const router = Router();
 
-// A logged-in kabupaten-office account (e.g. username "buleleng") scopes
-// every data endpoint to just that kabupaten instead of all of Bali - see
-// detectKabupatenScope for what counts as a kabupaten account vs. a
-// provincial "bidang" one. Derived fresh from the stored username each call
-// (no separate flag to keep in sync), and persists across a token expiring
-// (an install's identity shouldn't flip back to "all of Bali" just because
-// the token hasn't refreshed yet) - only a different account logging in
-// changes it.
+// A logged-in kabupaten-office account scopes every data endpoint to just
+// that kabupaten instead of all of Bali - see resolveKabupatenScope, which
+// prefers SIK's own login response (user.group/user.subgroup) over
+// pattern-matching the username. Derived fresh from stored admin_config
+// each call (no separate flag to keep in sync), and persists across a
+// token expiring (an install's identity shouldn't flip back to "all of
+// Bali" just because the token hasn't refreshed yet) - only a different
+// account logging in changes it.
 function currentKabupatenScope() {
-  return detectKabupatenScope(db.getAdminConfig().username);
+  const admin = db.getAdminConfig();
+  return resolveKabupatenScope({ sikGroup: admin.sikGroup, sikSubgroup: admin.sikSubgroup, username: admin.username });
 }
 
 router.get('/quakes', (req, res) => {
@@ -120,7 +121,7 @@ router.post('/admin/sik/login', async (req, res) => {
   // guess here about what a valid username/password should look like.
   const { username = '', password = '', rememberSession } = req.body || {};
   try {
-    const { token } = await sikLogin(username, password);
+    const { token, user } = await sikLogin(username, password);
     const tokenExpiresAt = Date.now() + config.sikTokenTtlMinutes * 60000;
     const passwordHash = bcrypt.hashSync(password, 10);
     // Opt-in only: encrypted password is what lets the scheduler silently
@@ -128,7 +129,9 @@ router.post('/admin/sik/login', async (req, res) => {
     // to this form every ~60 minutes. Deliberate deviation from the SIK
     // guide's "no silent retry" - the operator/BPBD chose this tradeoff.
     const passwordEnc = rememberSession ? encrypt(password) : null;
-    db.setAdminAuth({ username, passwordHash, passwordEnc, token, tokenExpiresAt });
+    // user.group/user.subgroup are SIK's own authoritative answer to which
+    // kabupaten (if any) this account is scoped to - see resolveKabupatenScope.
+    db.setAdminAuth({ username, passwordHash, passwordEnc, token, tokenExpiresAt, sikGroup: user?.group, sikSubgroup: user?.subgroup });
     db.setSourceStatus('sik', { status: 'idle', error: null });
     scheduleSourceFetch('sik');
     res.json({ loggedIn: true, username, tokenExpiresAt, rememberSession: !!rememberSession });
@@ -153,7 +156,7 @@ router.get('/admin/sik/status', (req, res) => {
     username: admin.username || null,
     tokenExpiresAt: loggedIn ? admin.tokenExpiresAt : null,
     rememberSession: !!admin.passwordEnc,
-    kabupatenScope: detectKabupatenScope(admin.username),
+    kabupatenScope: currentKabupatenScope(),
   });
 });
 

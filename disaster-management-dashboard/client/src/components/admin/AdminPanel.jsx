@@ -330,38 +330,31 @@ function FetchProgressBar({ progress }) {
   );
 }
 
-// Per-kabupaten pagination diagnostics from the last completed SIK fetch
-// (see fetchAllEvents in sik.js) - shows directly on this page whether a
-// low "Data Ditarik" count is SIK's own data ceiling (pagesFetched === 1,
-// lastPageMeta === 1 or blank) or pagination actually being cut short,
-// without needing to open the server's console output.
+// Pagination diagnostics from the last completed SIK fetch (see
+// fetchAllEvents in sik.js, a single combined request across every
+// kabupaten - not per-kabupaten anymore) - shows directly on this page
+// whether a low "Data Ditarik" count is SIK's own data ceiling
+// (pagesFetched === 1, lastPageMeta === 1 or blank) or pagination actually
+// being cut short, without needing to open the server's console output.
 function PaginationDiagTable({ diag }) {
+  const d = diag[0];
+  if (!d) return null;
+  const rows = [
+    ['Item diambil', d.totalFetched],
+    ['Halaman diambil', d.pagesFetched],
+    ['Item di halaman pertama', d.page1Count],
+    ['Info halaman dari SIK', d.lastPageMeta == null ? 'tidak ada info' : `last_page=${d.lastPageMeta}`],
+  ];
   return (
     <details style={{ fontSize: 11.5 }}>
-      <summary style={{ cursor: 'pointer', fontWeight: 600, color: 'var(--muted)' }}>
-        Detail per kabupaten/kota ({diag.length})
-      </summary>
-      <div style={{ marginTop: 8, overflowX: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
-          <thead>
-            <tr style={{ textAlign: 'left', color: 'var(--muted)' }}>
-              <th style={{ padding: '3px 6px' }}>Kabupaten/Kota</th>
-              <th style={{ padding: '3px 6px' }}>Item Diambil</th>
-              <th style={{ padding: '3px 6px' }}>Halaman Diambil</th>
-              <th style={{ padding: '3px 6px' }}>Info Halaman SIK</th>
-            </tr>
-          </thead>
-          <tbody>
-            {diag.map((d) => (
-              <tr key={d.kabkotaId} style={{ borderTop: '1px solid var(--border)' }}>
-                <td style={{ padding: '3px 6px', fontWeight: 600 }}>{d.kabupaten}</td>
-                <td style={{ padding: '3px 6px' }}>{d.totalFetched}</td>
-                <td style={{ padding: '3px 6px' }}>{d.pagesFetched}</td>
-                <td style={{ padding: '3px 6px' }}>{d.lastPageMeta == null ? 'tidak ada info' : `last_page=${d.lastPageMeta}`}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <summary style={{ cursor: 'pointer', fontWeight: 600, color: 'var(--muted)' }}>Detail pagination</summary>
+      <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
+        {rows.map(([label, value]) => (
+          <div key={label} style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+            <span style={{ color: 'var(--muted)' }}>{label}</span>
+            <span style={{ fontWeight: 600 }}>{value}</span>
+          </div>
+        ))}
       </div>
     </details>
   );

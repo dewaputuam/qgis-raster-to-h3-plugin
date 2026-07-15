@@ -47,6 +47,8 @@ CREATE TABLE IF NOT EXISTS events (
   desa TEXT,
   korban_meninggal INTEGER,
   korban_luka INTEGER,
+  korban_luka_berat INTEGER,
+  korban_luka_ringan INTEGER,
   korban_hilang INTEGER,
   bangunan_rr INTEGER,
   bangunan_rs INTEGER,
@@ -90,13 +92,27 @@ const adminConfigCols = db.prepare("PRAGMA table_info(admin_config)").all().map(
 if (!adminConfigCols.includes('password_enc')) {
   db.exec('ALTER TABLE admin_config ADD COLUMN password_enc TEXT');
 }
-// { [kabkotaId]: kabupatenName } learned by discoverKabkotaMapping (sik.js) -
-// config.json's kabkota id guess turned out to be wrong for more than one
-// kabupaten on a live account, so this overrides it once the real id has
-// actually been observed, and is cached here so re-discovery only happens
-// once per kabupaten rather than on every fetch.
-if (!adminConfigCols.includes('discovered_kabkota_ids_json')) {
-  db.exec("ALTER TABLE admin_config ADD COLUMN discovered_kabkota_ids_json TEXT NOT NULL DEFAULT '{}'");
+// SIK's own login response tells us exactly which kabupaten an account is
+// scoped to (user.group === "USER_KABKOTA", user.subgroup === e.g.
+// "BULELENG") - ground truth from the API itself, captured here instead of
+// re-deriving it by pattern-matching the username string every time (see
+// resolveKabupatenScope in kabupatenScope.js).
+if (!adminConfigCols.includes('sik_group')) {
+  db.exec('ALTER TABLE admin_config ADD COLUMN sik_group TEXT');
+}
+if (!adminConfigCols.includes('sik_subgroup')) {
+  db.exec('ALTER TABLE admin_config ADD COLUMN sik_subgroup TEXT');
+}
+
+// Same idea: events predates knowing the real korban_summary split (luka
+// berat vs. ringan) - the detail endpoint's actual field names only became
+// known after cross-referencing a live account's raw responses.
+const eventsCols = db.prepare("PRAGMA table_info(events)").all().map((c) => c.name);
+if (!eventsCols.includes('korban_luka_berat')) {
+  db.exec('ALTER TABLE events ADD COLUMN korban_luka_berat INTEGER');
+}
+if (!eventsCols.includes('korban_luka_ringan')) {
+  db.exec('ALTER TABLE events ADD COLUMN korban_luka_ringan INTEGER');
 }
 
 // Same idea: source_status predates the fetch-progress bar and the
@@ -131,7 +147,10 @@ function toEventParams(ev) {
   return {
     uuid: ev.uuid, tanggal: ev.tanggal, jam: ev.jam, jenisBencana: ev.jenisBencana, lokasi: ev.lokasi,
     keterangan: ev.keterangan, kabupaten: ev.kabupaten, kecamatan: ev.kecamatan, desa: ev.desa,
-    korbanMeninggal: ev.korbanMeninggal, korbanLuka: ev.korbanLuka, korbanHilang: ev.korbanHilang,
+    korbanMeninggal: ev.korbanMeninggal, korbanLuka: ev.korbanLuka,
+    // ?? null, not left to default undefined - these two are new fields the
+    // static seed file predates, and node:sqlite rejects binding undefined.
+    korbanLukaBerat: ev.korbanLukaBerat ?? null, korbanLukaRingan: ev.korbanLukaRingan ?? null, korbanHilang: ev.korbanHilang,
     bangunanRr: ev.bangunanRr, bangunanRs: ev.bangunanRs, bangunanRb: ev.bangunanRb, kerugian: ev.kerugian,
     statusVerifikasi: ev.statusVerifikasi, lat: ev.lat, lng: ev.lng,
     impactsJson: JSON.stringify(ev.impacts || []),
@@ -158,11 +177,11 @@ function seedIfEmpty() {
     const seed = JSON.parse(fs.readFileSync(path.join(dataDir, 'disaster-events-seed.json'), 'utf-8'));
     const insert = db.prepare(`
       INSERT INTO events (uuid, tanggal, jam, jenis_bencana, lokasi, keterangan, kabupaten, kecamatan, desa,
-        korban_meninggal, korban_luka, korban_hilang, bangunan_rr, bangunan_rs, bangunan_rb, kerugian,
-        status_verifikasi, lat, lng, impacts_json)
+        korban_meninggal, korban_luka, korban_luka_berat, korban_luka_ringan, korban_hilang,
+        bangunan_rr, bangunan_rs, bangunan_rb, kerugian, status_verifikasi, lat, lng, impacts_json)
       VALUES (@uuid, @tanggal, @jam, @jenisBencana, @lokasi, @keterangan, @kabupaten, @kecamatan, @desa,
-        @korbanMeninggal, @korbanLuka, @korbanHilang, @bangunanRr, @bangunanRs, @bangunanRb, @kerugian,
-        @statusVerifikasi, @lat, @lng, @impactsJson)
+        @korbanMeninggal, @korbanLuka, @korbanLukaBerat, @korbanLukaRingan, @korbanHilang,
+        @bangunanRr, @bangunanRs, @bangunanRb, @kerugian, @statusVerifikasi, @lat, @lng, @impactsJson)
     `);
     runInTransaction(() => {
       for (const ev of seed) insert.run(toEventParams(ev));
@@ -186,15 +205,17 @@ seedIfEmpty();
 export function upsertEvent(ev) {
   db.prepare(`
     INSERT INTO events (uuid, tanggal, jam, jenis_bencana, lokasi, keterangan, kabupaten, kecamatan, desa,
-      korban_meninggal, korban_luka, korban_hilang, bangunan_rr, bangunan_rs, bangunan_rb, kerugian,
-      status_verifikasi, lat, lng, impacts_json)
+      korban_meninggal, korban_luka, korban_luka_berat, korban_luka_ringan, korban_hilang,
+      bangunan_rr, bangunan_rs, bangunan_rb, kerugian, status_verifikasi, lat, lng, impacts_json)
     VALUES (@uuid, @tanggal, @jam, @jenisBencana, @lokasi, @keterangan, @kabupaten, @kecamatan, @desa,
-      @korbanMeninggal, @korbanLuka, @korbanHilang, @bangunanRr, @bangunanRs, @bangunanRb, @kerugian,
-      @statusVerifikasi, @lat, @lng, @impactsJson)
+      @korbanMeninggal, @korbanLuka, @korbanLukaBerat, @korbanLukaRingan, @korbanHilang,
+      @bangunanRr, @bangunanRs, @bangunanRb, @kerugian, @statusVerifikasi, @lat, @lng, @impactsJson)
     ON CONFLICT(uuid) DO UPDATE SET
       tanggal=excluded.tanggal, jam=excluded.jam, jenis_bencana=excluded.jenis_bencana, lokasi=excluded.lokasi,
       keterangan=excluded.keterangan, kabupaten=excluded.kabupaten, kecamatan=excluded.kecamatan, desa=excluded.desa,
-      korban_meninggal=excluded.korban_meninggal, korban_luka=excluded.korban_luka, korban_hilang=excluded.korban_hilang,
+      korban_meninggal=excluded.korban_meninggal, korban_luka=excluded.korban_luka,
+      korban_luka_berat=excluded.korban_luka_berat, korban_luka_ringan=excluded.korban_luka_ringan,
+      korban_hilang=excluded.korban_hilang,
       bangunan_rr=excluded.bangunan_rr, bangunan_rs=excluded.bangunan_rs, bangunan_rb=excluded.bangunan_rb,
       kerugian=excluded.kerugian, status_verifikasi=excluded.status_verifikasi, lat=excluded.lat, lng=excluded.lng,
       impacts_json=excluded.impacts_json
@@ -214,6 +235,8 @@ function rowToEvent(row) {
     desa: row.desa,
     korbanMeninggal: row.korban_meninggal,
     korbanLuka: row.korban_luka,
+    korbanLukaBerat: row.korban_luka_berat,
+    korbanLukaRingan: row.korban_luka_ringan,
     korbanHilang: row.korban_hilang,
     bangunanRr: row.bangunan_rr,
     bangunanRs: row.bangunan_rs,
@@ -311,22 +334,19 @@ export function getAdminConfig() {
     token: row.token,
     tokenExpiresAt: row.token_expires_at,
     fetchSettings: JSON.parse(row.fetch_settings),
+    // From SIK's own login response (user.group/user.subgroup) - ground
+    // truth for which kabupaten (if any) this account is scoped to. See
+    // resolveKabupatenScope in kabupatenScope.js.
+    sikGroup: row.sik_group,
+    sikSubgroup: row.sik_subgroup,
   };
 }
 
-export function getDiscoveredKabkotaIds() {
-  const row = db.prepare('SELECT discovered_kabkota_ids_json FROM admin_config WHERE id = 1').get();
-  return JSON.parse(row?.discovered_kabkota_ids_json || '{}');
-}
-
-export function setDiscoveredKabkotaIds(mapping) {
-  db.prepare('UPDATE admin_config SET discovered_kabkota_ids_json = ? WHERE id = 1').run(JSON.stringify(mapping));
-}
-
-export function setAdminAuth({ username, passwordHash, passwordEnc, token, tokenExpiresAt }) {
+export function setAdminAuth({ username, passwordHash, passwordEnc, token, tokenExpiresAt, sikGroup, sikSubgroup }) {
   db.prepare(`
-    UPDATE admin_config SET username = ?, password_hash = ?, password_enc = ?, token = ?, token_expires_at = ? WHERE id = 1
-  `).run(username, passwordHash, passwordEnc ?? null, token, tokenExpiresAt);
+    UPDATE admin_config SET username = ?, password_hash = ?, password_enc = ?, token = ?, token_expires_at = ?,
+      sik_group = ?, sik_subgroup = ? WHERE id = 1
+  `).run(username, passwordHash, passwordEnc ?? null, token, tokenExpiresAt, sikGroup ?? null, sikSubgroup ?? null);
 }
 
 export function updateAdminToken(token, tokenExpiresAt) {
