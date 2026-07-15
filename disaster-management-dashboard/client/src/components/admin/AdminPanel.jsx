@@ -220,6 +220,10 @@ export default function AdminPanel({ events, regions, onOpenMap }) {
 
               {st.status === 'loading' && st.progress && <FetchProgressBar progress={st.progress} />}
 
+              {key === 'sik' && st.paginationDiag && st.paginationDiag.length > 0 && (
+                <PaginationDiagTable diag={st.paginationDiag} />
+              )}
+
               {st.error && (
                 <div style={{ fontSize: 12, fontWeight: 600, color: 'oklch(55% 0.18 25)', background: 'oklch(55% 0.18 25 / 0.1)', border: '1px solid oklch(55% 0.18 25 / 0.3)', borderRadius: 8, padding: '8px 10px' }}>
                   {st.error}
@@ -323,6 +327,43 @@ function FetchProgressBar({ progress }) {
         <div style={{ height: '100%', width: `${pct}%`, background: 'var(--accent-strong)', borderRadius: 999, transition: 'width .3s ease' }} />
       </div>
     </div>
+  );
+}
+
+// Per-kabupaten pagination diagnostics from the last completed SIK fetch
+// (see fetchAllEvents in sik.js) - shows directly on this page whether a
+// low "Data Ditarik" count is SIK's own data ceiling (pagesFetched === 1,
+// lastPageMeta === 1 or blank) or pagination actually being cut short,
+// without needing to open the server's console output.
+function PaginationDiagTable({ diag }) {
+  return (
+    <details style={{ fontSize: 11.5 }}>
+      <summary style={{ cursor: 'pointer', fontWeight: 600, color: 'var(--muted)' }}>
+        Detail per kabupaten/kota ({diag.length})
+      </summary>
+      <div style={{ marginTop: 8, overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+          <thead>
+            <tr style={{ textAlign: 'left', color: 'var(--muted)' }}>
+              <th style={{ padding: '3px 6px' }}>Kabupaten/Kota</th>
+              <th style={{ padding: '3px 6px' }}>Item Diambil</th>
+              <th style={{ padding: '3px 6px' }}>Halaman Diambil</th>
+              <th style={{ padding: '3px 6px' }}>Info Halaman SIK</th>
+            </tr>
+          </thead>
+          <tbody>
+            {diag.map((d) => (
+              <tr key={d.kabkotaId} style={{ borderTop: '1px solid var(--border)' }}>
+                <td style={{ padding: '3px 6px', fontWeight: 600 }}>{d.kabupaten}</td>
+                <td style={{ padding: '3px 6px' }}>{d.totalFetched}</td>
+                <td style={{ padding: '3px 6px' }}>{d.pagesFetched}</td>
+                <td style={{ padding: '3px 6px' }}>{d.lastPageMeta == null ? 'tidak ada info' : `last_page=${d.lastPageMeta}`}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </details>
   );
 }
 

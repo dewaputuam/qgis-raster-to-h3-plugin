@@ -1,7 +1,7 @@
 import { config } from '../config.js';
 import * as db from '../db.js';
 import { fetchCuaca, fetchGempaTerkini } from './bmkg.js';
-import { fetchAllEvents, sikLogin, SikAuthError } from './sik.js';
+import { fetchAllEvents, discoverKabkotaMapping, sikLogin, SikAuthError } from './sik.js';
 import { decrypt } from './crypto.js';
 import { detectKabupatenScope } from './kabupatenScope.js';
 
@@ -67,6 +67,7 @@ async function runFetch(key) {
   try {
     let count = 0;
     let dateRangeForStatus = null;
+    let paginationDiagForStatus = null;
     if (key === 'sik') {
       let admin = db.getAdminConfig();
       const rangeMonths = getSikRangeMonths();
@@ -74,13 +75,32 @@ async function runFetch(key) {
       // Drives the progress bar in Kelola Data - "list" phase is per
       // kabupaten queried, "impacts" phase is per event's detail fetch.
       const onProgress = (progress) => db.setSourceStatus('sik', { status: 'loading', progress });
+      let discovered = db.getDiscoveredKabkotaIds();
+      if (kabupatenScope && !Object.values(discovered).includes(kabupatenScope)) {
+        // config.json's kabkota id guess has been confirmed wrong for more
+        // than one kabupaten on a live account (see discoverKabkotaMapping
+        // in sik.js) - a scoped account that only queries its assumed id
+        // would silently keep pulling a different kabupaten's data forever.
+        // Spend one lightweight discovery pass (page 1 of all 9 ids) the
+        // first time this scope's real id hasn't been verified yet, so the
+        // rest of this fetch (and every one after, via the cache) uses a
+        // confirmed id instead of the guess.
+        try {
+          discovered = { ...discovered, ...(await discoverKabkotaMapping(admin.token)) };
+          db.setDiscoveredKabkotaIds(discovered);
+        } catch (err) {
+          if (err instanceof SikAuthError) throw err;
+          // Discovery failing shouldn't block this fetch - fall back to the
+          // config guess this run and retry discovery next time.
+        }
+      }
       let events;
       try {
-        events = await fetchAllEvents(admin.token, { getPreviousImpacts: db.getEventImpacts, rangeMonths, kabupatenScope, onProgress });
+        events = await fetchAllEvents(admin.token, { getPreviousImpacts: db.getEventImpacts, rangeMonths, kabupatenScope, kabkotaIdOverrides: discovered, onProgress });
       } catch (err) {
         if (!(err instanceof SikAuthError) || !(await attemptSikRelogin())) throw err;
         admin = db.getAdminConfig();
-        events = await fetchAllEvents(admin.token, { getPreviousImpacts: db.getEventImpacts, rangeMonths, kabupatenScope, onProgress });
+        events = await fetchAllEvents(admin.token, { getPreviousImpacts: db.getEventImpacts, rangeMonths, kabupatenScope, kabkotaIdOverrides: discovered, onProgress });
       }
       const existingUuids = db.getAllEventUuids();
       const newOnes = events
@@ -96,6 +116,12 @@ async function runFetch(key) {
       dateRangeForStatus = tanggalList.length
         ? { oldest: tanggalList[0], newest: tanggalList[tanggalList.length - 1] }
         : null;
+      // See fetchAllEvents in sik.js - per-kabupaten pagination diagnostics
+      // (page count, last_page/total metadata SIK actually sent) attached to
+      // the returned array, surfaced in Kelola Data so it's visible on the
+      // page itself whether a low count is SIK's own data ceiling or
+      // pagination being cut short, without needing the server console.
+      paginationDiagForStatus = events.paginationDiag || null;
     } else if (key === 'cuaca') {
       const { lokasi, cuaca } = await fetchCuaca(config.defaultAdm4);
       db.cacheWeather(config.defaultAdm4, lokasi, cuaca);
@@ -107,7 +133,7 @@ async function runFetch(key) {
     }
     const now = Date.now();
     const intervalMin = getIntervalMinutes(key);
-    db.setSourceStatus(key, { status: 'ok', lastFetch: now, nextFetch: now + intervalMin * 60000, count, error: null, progress: null, dateRange: dateRangeForStatus });
+    db.setSourceStatus(key, { status: 'ok', lastFetch: now, nextFetch: now + intervalMin * 60000, count, error: null, progress: null, dateRange: dateRangeForStatus, paginationDiag: paginationDiagForStatus });
     armTimer(key, intervalMin);
   } catch (err) {
     if (err instanceof SikAuthError) {

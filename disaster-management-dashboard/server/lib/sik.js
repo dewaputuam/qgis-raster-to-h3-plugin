@@ -169,6 +169,11 @@ function cutoffDateString(rangeMonths) {
   return `${year}-${String(month + 1).padStart(2, '0')}-01`;
 }
 
+function todayDateString() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+}
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -190,40 +195,173 @@ async function fetchWithRetry(url, options, { maxRetries = 3 } = {}) {
   }
 }
 
-// The list endpoint looks like a standard Laravel paginate() response
-// (`data.data` = the page's items, alongside `current_page`/`last_page`/
-// `total`) wrapped in this app's own `data` envelope. Requesting
-// per_page=200 doesn't guarantee SIK actually honors that per_page value or
-// returns everything on one page - so this follows current_page/last_page
-// and fetches every page instead of silently keeping only page 1. A count
-// that looked suspicious (e.g. "67 item") turned out to be exactly this:
-// nothing enforces a row cap in this app, but page 2+ was never requested.
-async function fetchKejadianPage(kabkotaId, token, page) {
-  const res = await fetchWithRetry(`${config.sikBaseUrl}/lap-kejadian?kabkota=${kabkotaId}&per_page=200&page=${page}`, {
+// SIK's real pagination envelope isn't documented, and this has only ever
+// been tested against mock servers built to match a *guess* at the shape
+// (Laravel paginate() nested once under `data`: data.data/current_page/
+// last_page/total). A live deployment could just as easily nest an extra
+// `meta` layer (data.meta.last_page, common for API Resource collections)
+// or put the items straight on `data` with pagination fields as siblings
+// of it instead of nested inside. All three are tried here instead of
+// assuming only the first shape, since guessing wrong silently truncates
+// every account to page 1 with no error at all - exactly the failure mode
+// under investigation ("still only 69 items no matter the range").
+function extractPagedShape(body) {
+  const d = body && body.data;
+  if (Array.isArray(d)) {
+    const meta = (body && body.meta) || {};
+    return {
+      items: d,
+      lastPage: meta.last_page ?? meta.lastPage ?? (body && body.last_page) ?? null,
+      total: meta.total ?? (body && body.total) ?? null,
+    };
+  }
+  if (d && Array.isArray(d.data)) {
+    const meta = d.meta || {};
+    return {
+      items: d.data,
+      lastPage: d.last_page ?? meta.last_page ?? d.lastPage ?? null,
+      total: d.total ?? meta.total ?? null,
+    };
+  }
+  return { items: [], lastPage: null, total: null };
+}
+
+// The guide's own note ("filter tanggal via parameter query kadang tidak
+// konsisten di sisi server") plus a real account confirmed by direct
+// observation - the item count and date range returned never move no
+// matter what "Rentang Data" is set to, even though the client-side cutoff
+// filter (cutoffDateString) is independently verified to work when older
+// data is actually present. The likeliest explanation left is that SIK's
+// list endpoint itself defaults to only recent data server-side unless a
+// date query param is passed, and neither this app nor the guide's own
+// reference code (which never sends one either) has ever supplied one.
+// The exact param name isn't documented and couldn't be inspected via the
+// portal's own UI (it has no browser devtools of its own to inspect - that
+// belongs to the browser, not to SIK), so several of the most common
+// Indonesian gov-API conventions are sent at once here on a best-effort
+// basis. Unrecognized query params are harmless (typical REST/Laravel
+// backends simply ignore them), so this can't make things worse even if
+// every guess misses - and the client-side cutoff filter in fetchAllEvents
+// still applies regardless, so correctness never depends on one of these
+// guesses actually landing.
+function dateRangeParams(dateRange) {
+  if (!dateRange) return '';
+  const { from, to } = dateRange;
+  return (
+    `&tanggal_awal=${from}&tanggal_akhir=${to}` +
+    `&tanggal_dari=${from}&tanggal_sampai=${to}` +
+    `&start_date=${from}&end_date=${to}` +
+    `&tanggal=${from},${to}`
+  );
+}
+
+async function fetchKejadianPage(kabkotaId, token, page, dateRange) {
+  const url = `${config.sikBaseUrl}/lap-kejadian?kabkota=${kabkotaId}&per_page=200&page=${page}${dateRangeParams(dateRange)}`;
+  // Printed so an operator can confirm, straight from their own server
+  // console, exactly which date-param guesses were actually sent - no
+  // browser devtools needed (those belong to whatever browser someone
+  // views SIK's own portal in, not to this app or to SIK itself).
+  if (page === 1 && dateRange) console.log(`[sik] requesting with date-range guesses: ${url}`);
+  const res = await fetchWithRetry(url, {
     headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
   });
   if (res.status === 401) throw new SikAuthError('Token SIK kedaluwarsa atau tidak valid.');
   if (!res.ok) throw new Error(`SIK lap-kejadian HTTP ${res.status} (kabkota=${kabkotaId}, page=${page})`);
   const body = await res.json();
-  const paged = body && body.data;
-  const items = (paged && paged.data) || [];
-  const lastPage = (paged && paged.last_page) || 1;
-  return { items, lastPage };
+  return extractPagedShape(body);
 }
 
-async function fetchAllKejadianForKabkota(kabkotaId, kabupatenName, token, { onListSample } = {}) {
-  const { items: firstPageItems, lastPage } = await fetchKejadianPage(kabkotaId, token, 1);
-  if (onListSample && firstPageItems.length > 0) onListSample(kabkotaId, kabupatenName, firstPageItems[0], lastPage);
-  let allItems = firstPageItems;
-  for (let page = 2; page <= lastPage; page++) {
-    const { items } = await fetchKejadianPage(kabkotaId, token, page);
-    allItems = allItems.concat(items);
+// `last_page`/`total` metadata (whatever shape it turned out to be in) is
+// only used as a hint/cap here, never trusted on its own - the real
+// stopping condition is "the server gave us nothing new", so this keeps
+// walking pages even when metadata is missing (lastPage === null) or wrong,
+// and stops as soon as a page comes back empty or repeats uuids we already
+// have (a server that quietly clamps ?page= back to page 1 for anything out
+// of range, rather than erroring, would otherwise loop forever re-adding the
+// same page). MAX_PAGES is purely a runaway-loop safety net.
+const MAX_PAGES_PER_KABKOTA = 200;
+
+async function fetchAllKejadianForKabkota(kabkotaId, kabupatenName, token, { onListSample, dateRange } = {}) {
+  const first = await fetchKejadianPage(kabkotaId, token, 1, dateRange);
+  const seenUuids = new Set(first.items.map((it) => it.uuid).filter(Boolean));
+  let allItems = first.items;
+  let pagesFetched = first.items.length > 0 ? 1 : 0;
+  let page = 2;
+  while (
+    allItems.length > 0 &&
+    pagesFetched < MAX_PAGES_PER_KABKOTA &&
+    (first.lastPage == null || page <= first.lastPage)
+  ) {
+    const { items } = await fetchKejadianPage(kabkotaId, token, page, dateRange);
+    if (items.length === 0) break;
+    const newItems = items.filter((it) => !it.uuid || !seenUuids.has(it.uuid));
+    if (newItems.length === 0) break;
+    newItems.forEach((it) => it.uuid && seenUuids.add(it.uuid));
+    allItems = allItems.concat(newItems);
+    pagesFetched++;
+    page++;
   }
-  return allItems.map((raw) => mapKejadian(raw, kabupatenName));
+  if (onListSample) {
+    onListSample(kabkotaId, kabupatenName, first.items[0] || null, {
+      lastPageMeta: first.lastPage,
+      totalMeta: first.total,
+      page1Count: first.items.length,
+      pagesFetched,
+      totalFetched: allItems.length,
+    });
+  }
+  return { events: allItems.map((raw) => mapKejadian(raw, kabupatenName)), diag: {
+    kabupaten: kabupatenName, kabkotaId,
+    lastPageMeta: first.lastPage, totalMeta: first.total,
+    page1Count: first.items.length, pagesFetched, totalFetched: allItems.length,
+  } };
 }
 
-export async function fetchAllEvents(token, { getPreviousImpacts, rangeMonths, kabupatenScope, onProgress } = {}) {
-  const allEntries = Object.entries(config.kabkotaIds);
+// The numeric id this app sends as `?kabkota=` is SIK's own internal
+// numbering, not the official Kemendagri code - and it does NOT reliably
+// match config.json's guessed name->id table. Confirmed against a live
+// account's console output: querying kabkota=1 (config guesses "Jembrana")
+// actually returned Badung's events (kabupaten.subgroup="BADUNG",
+// id_ref=3); kabkota=2 (config guesses "Tabanan") actually returned
+// Bangli's (id_ref=6). Only kabkota=7 (Karangasem) happened to line up.
+// A scoped kabupaten-office account that only ever queries its assumed id
+// (see fetchAllEvents below) would then silently keep pulling a DIFFERENT
+// kabupaten's data forever - it would look like the account has no events
+// at all once anything filters by the (correct) scope name, which doesn't
+// match what actually came back. This samples page 1 of every configured
+// id and reads the reliable `kabupaten.subgroup` field SIK returns on each
+// record to learn the true id -> kabupaten mapping, so callers can use a
+// verified id instead of the guess. Caching this (see scheduler.js) means
+// the discovery cost (9 lightweight requests) is paid once, not every fetch.
+export async function discoverKabkotaMapping(token) {
+  const ids = Object.values(config.kabkotaIds);
+  const mapping = {};
+  await mapWithConcurrency(ids, 3, async (id) => {
+    try {
+      const { items } = await fetchKejadianPage(id, token, 1);
+      const subgroup = items[0] && items[0].kabupaten && items[0].kabupaten.subgroup;
+      if (subgroup) mapping[id] = titleCaseKabupaten(subgroup);
+    } catch (err) {
+      if (err instanceof SikAuthError) throw err;
+      // A single id failing (e.g. genuinely zero events ever) shouldn't
+      // block discovering the rest.
+    }
+  });
+  return mapping;
+}
+
+function titleCaseKabupaten(subgroup) {
+  return subgroup.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+export async function fetchAllEvents(token, { getPreviousImpacts, rangeMonths, kabupatenScope, kabkotaIdOverrides, onProgress } = {}) {
+  // kabkotaIdOverrides carries any id->kabupaten corrections learned by
+  // discoverKabkotaMapping (see scheduler.js) - preferred over the
+  // config.json guess wherever a correction has actually been discovered.
+  const allEntries = Object.entries(config.kabkotaIds).map(([name, id]) => {
+    const override = kabkotaIdOverrides && Object.entries(kabkotaIdOverrides).find(([, n]) => n === name);
+    return [name, override ? Number(override[0]) : id];
+  });
   // A kabupaten-office account only ever needs its own kabupaten's data -
   // pulling all nine (then discarding 8/9 of it at read time via the scope
   // filter in routes/api.js) wastes requests against a real, rate-limited
@@ -232,6 +370,11 @@ export async function fetchAllEvents(token, { getPreviousImpacts, rangeMonths, k
   const kabkotaEntries = kabupatenScope
     ? allEntries.filter(([name]) => name === kabupatenScope)
     : allEntries;
+  // Sent as a best-effort server-side date filter (see dateRangeParams) in
+  // addition to the client-side cutoff filter further down - if SIK's list
+  // endpoint really does default to recent-only data server-side, this is
+  // the only way to ever see further back regardless of pagination.
+  const dateRange = rangeMonths ? { from: cutoffDateString(rangeMonths), to: todayDateString() } : null;
   let loggedListSample = false;
   let listDone = 0;
   const results = await Promise.all(
@@ -239,19 +382,27 @@ export async function fetchAllEvents(token, { getPreviousImpacts, rangeMonths, k
       // Stagger the start of each request slightly instead of firing all of
       // them in the same instant - still concurrent, just not a single burst.
       await sleep(i * 250);
-      const mapped = await fetchAllKejadianForKabkota(id, kabupatenName, token, {
-        onListSample: (kabkotaId, name, sample, lastPage) => {
+      const { events: mapped, diag } = await fetchAllKejadianForKabkota(id, kabupatenName, token, {
+        dateRange,
+        onListSample: (kabkotaId, name, sample, meta) => {
           if (loggedListSample) return;
           loggedListSample = true;
-          console.log(`[sik] sample raw list item (kabkota=${kabkotaId}, expected kabupaten=${name}, last_page=${lastPage}):`, JSON.stringify(sample, null, 2));
+          console.log(`[sik] sample raw list item (kabkota=${kabkotaId}, expected kabupaten=${name}, meta=${JSON.stringify(meta)}):`, JSON.stringify(sample, null, 2));
         },
       });
       listDone++;
       if (onProgress) onProgress({ phase: 'list', current: listDone, total: kabkotaEntries.length });
-      return mapped;
+      return { mapped, diag };
     })
   );
-  let events = results.flat();
+  let events = results.flatMap((r) => r.mapped);
+  // Per-kabupaten pagination diagnostics (page count, per-page item count,
+  // whatever last_page/total metadata the server sent) - surfaced up to
+  // Kelola Data so an operator can see directly on the page whether the
+  // "still stuck at N items" issue is SIK's own data ceiling (pagesFetched
+  // === 1, lastPageMeta === 1 or null) or pagination actually being cut
+  // short, without needing to dig through the server's console output.
+  const paginationDiag = results.map((r) => r.diag);
 
   if (rangeMonths) {
     const cutoff = cutoffDateString(rangeMonths);
@@ -276,5 +427,6 @@ export async function fetchAllEvents(token, { getPreviousImpacts, rangeMonths, k
     }
   });
 
+  events.paginationDiag = paginationDiag;
   return events;
 }

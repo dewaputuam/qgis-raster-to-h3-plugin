@@ -90,6 +90,14 @@ const adminConfigCols = db.prepare("PRAGMA table_info(admin_config)").all().map(
 if (!adminConfigCols.includes('password_enc')) {
   db.exec('ALTER TABLE admin_config ADD COLUMN password_enc TEXT');
 }
+// { [kabkotaId]: kabupatenName } learned by discoverKabkotaMapping (sik.js) -
+// config.json's kabkota id guess turned out to be wrong for more than one
+// kabupaten on a live account, so this overrides it once the real id has
+// actually been observed, and is cached here so re-discovery only happens
+// once per kabupaten rather than on every fetch.
+if (!adminConfigCols.includes('discovered_kabkota_ids_json')) {
+  db.exec("ALTER TABLE admin_config ADD COLUMN discovered_kabkota_ids_json TEXT NOT NULL DEFAULT '{}'");
+}
 
 // Same idea: source_status predates the fetch-progress bar and the
 // oldest/newest date-range display.
@@ -99,6 +107,9 @@ if (!sourceStatusCols.includes('progress_json')) {
 }
 if (!sourceStatusCols.includes('date_range_json')) {
   db.exec('ALTER TABLE source_status ADD COLUMN date_range_json TEXT');
+}
+if (!sourceStatusCols.includes('pagination_diag_json')) {
+  db.exec('ALTER TABLE source_status ADD COLUMN pagination_diag_json TEXT');
 }
 
 db.prepare(`INSERT INTO notification_queue (id, events_json) VALUES (1, '[]') ON CONFLICT(id) DO NOTHING`).run();
@@ -250,6 +261,12 @@ export function getSourceStatus(key) {
     // whether "Rentang Data" is having any effect, instead of just trusting
     // the item count.
     dateRange: row.date_range_json ? JSON.parse(row.date_range_json) : null,
+    // Per-kabupaten [{ kabupaten, kabkotaId, lastPageMeta, totalMeta,
+    // page1Count, pagesFetched, totalFetched }] from the last completed SIK
+    // fetch - lets Kelola Data show directly whether a low item count is
+    // SIK's own data ceiling (pagesFetched === 1) or pagination being cut
+    // short, without digging through the server console.
+    paginationDiag: row.pagination_diag_json ? JSON.parse(row.pagination_diag_json) : null,
   };
 }
 
@@ -258,18 +275,19 @@ export function getAllSourceStatus() {
 }
 
 export function setSourceStatus(key, patch) {
-  const cur = getSourceStatus(key) || { key, status: 'idle', lastFetch: null, nextFetch: null, count: null, error: null, progress: null, dateRange: null };
+  const cur = getSourceStatus(key) || { key, status: 'idle', lastFetch: null, nextFetch: null, count: null, error: null, progress: null, dateRange: null, paginationDiag: null };
   const next = { ...cur, ...patch };
   // node:sqlite throws on named params not referenced in the SQL (unlike
   // better-sqlite3, which ignores extras) - bind exactly the columns used,
-  // not a spread of `next` (which carries `progress`/`dateRange`, the
-  // objects, while the columns are `progressJson`/`dateRangeJson`, the
-  // serialized strings).
+  // not a spread of `next` (which carries `progress`/`dateRange`/
+  // `paginationDiag`, the objects, while the columns are their `*Json`
+  // serialized-string counterparts).
   db.prepare(`
-    INSERT INTO source_status (key, status, last_fetch, next_fetch, count, error, progress_json, date_range_json)
-      VALUES (@key, @status, @lastFetch, @nextFetch, @count, @error, @progressJson, @dateRangeJson)
+    INSERT INTO source_status (key, status, last_fetch, next_fetch, count, error, progress_json, date_range_json, pagination_diag_json)
+      VALUES (@key, @status, @lastFetch, @nextFetch, @count, @error, @progressJson, @dateRangeJson, @paginationDiagJson)
     ON CONFLICT(key) DO UPDATE SET status=excluded.status, last_fetch=excluded.last_fetch, next_fetch=excluded.next_fetch,
-      count=excluded.count, error=excluded.error, progress_json=excluded.progress_json, date_range_json=excluded.date_range_json
+      count=excluded.count, error=excluded.error, progress_json=excluded.progress_json, date_range_json=excluded.date_range_json,
+      pagination_diag_json=excluded.pagination_diag_json
   `).run({
     key: next.key,
     status: next.status,
@@ -279,6 +297,7 @@ export function setSourceStatus(key, patch) {
     error: next.error,
     progressJson: next.progress ? JSON.stringify(next.progress) : null,
     dateRangeJson: next.dateRange ? JSON.stringify(next.dateRange) : null,
+    paginationDiagJson: next.paginationDiag ? JSON.stringify(next.paginationDiag) : null,
   });
   return next;
 }
@@ -293,6 +312,15 @@ export function getAdminConfig() {
     tokenExpiresAt: row.token_expires_at,
     fetchSettings: JSON.parse(row.fetch_settings),
   };
+}
+
+export function getDiscoveredKabkotaIds() {
+  const row = db.prepare('SELECT discovered_kabkota_ids_json FROM admin_config WHERE id = 1').get();
+  return JSON.parse(row?.discovered_kabkota_ids_json || '{}');
+}
+
+export function setDiscoveredKabkotaIds(mapping) {
+  db.prepare('UPDATE admin_config SET discovered_kabkota_ids_json = ? WHERE id = 1').run(JSON.stringify(mapping));
 }
 
 export function setAdminAuth({ username, passwordHash, passwordEnc, token, tokenExpiresAt }) {
