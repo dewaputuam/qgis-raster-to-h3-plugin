@@ -20,6 +20,48 @@ export function findHazardLayer(key) {
   return HAZARD_LAYERS.find((l) => l.key === key) || null;
 }
 
+// Thresholds match the design handoff's own reference (classifyValue) -
+// used both for the histogram bar classification above and for per-point
+// (facility/building) classification via getSamples below.
+export function classifyValue(v) {
+  if (v === null || v === undefined || !Number.isFinite(v)) return null;
+  if (v < 0.3333) return 'Rendah';
+  if (v < 0.6666) return 'Sedang';
+  return 'Tinggi';
+}
+
+// Point-sample hazard classification (Stage 4) - used to color facility
+// markers and building footprints by the hazard index at their own
+// location, rather than the area-averaged histogram used for the summary
+// card. Proxied for the same CORS reason as fetchHistogram. Returns one
+// entry per input point (null where InaRISK had no data), matching order.
+export async function classifyPointsByHazard(imageServerUrl, points) {
+  if (!points.length) return [];
+  const geometry = JSON.stringify({ points: points.map((p) => [p.lng, p.lat]), spatialReference: { wkid: 4326 } });
+  const params = new URLSearchParams({ geometryType: 'esriGeometryMultipoint', geometry, returnFirstValueOnly: 'true', f: 'json' });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+  const results = new Array(points.length).fill(null);
+  try {
+    const res = await fetch(`${imageServerUrl}/getSamples?${params}`, { signal: controller.signal });
+    if (!res.ok) return results;
+    const data = await res.json();
+    const samples = data.samples || [];
+    samples.forEach((s, i) => {
+      const locId = s.locationId !== undefined ? s.locationId : i;
+      const value = parseFloat(s.value);
+      if (results[locId] !== undefined) {
+        results[locId] = { hazardClass: classifyValue(value), hazardValue: Number.isFinite(value) ? value : null };
+      }
+    });
+    return results;
+  } catch {
+    return results;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 // A plain browser fetch() straight to gis.bnpb.go.id for computeHistograms
 // (a JSON call, unlike the /export image below) is the CORS risk the design
 // handoff itself flags ("Verify these succeed from the target production

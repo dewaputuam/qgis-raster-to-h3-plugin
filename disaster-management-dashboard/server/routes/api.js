@@ -8,7 +8,9 @@ import { fetchCuaca } from '../lib/bmkg.js';
 import { encrypt } from '../lib/crypto.js';
 import { isPointInKabupaten } from '../lib/kabupatenPolygons.js';
 import { resolveKabupatenScope } from '../lib/kabupatenScope.js';
-import { HAZARD_LAYERS, findHazardLayer, fetchHistogram } from '../lib/inarisk.js';
+import { HAZARD_LAYERS, findHazardLayer, fetchHistogram, classifyPointsByHazard } from '../lib/inarisk.js';
+import { FACILITY_LAYERS, fetchFacilities } from '../lib/facilities.js';
+import { fetchBuildingFootprints } from '../lib/buildings.js';
 
 export const router = Router();
 
@@ -79,6 +81,23 @@ router.get('/events/:uuid', (req, res) => {
   if (!ev || (scope && ev.kabupaten !== scope)) return res.status(404).json({ error: 'Kejadian tidak ditemukan' });
   res.json({ data: { ...ev, locationValid: isPointInKabupaten(ev.kabupaten, ev.lat, ev.lng) } });
 });
+
+// Shared by the two Stage 4 routes below - same kabupaten-scope check as
+// GET /events/:uuid, plus the coordinate check both routes need before
+// calling out to an external GIS API with lat/lng.
+function loadScopedEventWithCoords(req, res) {
+  const scope = currentKabupatenScope();
+  const ev = db.getEventByUuid(req.params.uuid);
+  if (!ev || (scope && ev.kabupaten !== scope)) {
+    res.status(404).json({ error: 'Kejadian tidak ditemukan' });
+    return null;
+  }
+  if (!Number.isFinite(ev.lat) || !Number.isFinite(ev.lng)) {
+    res.status(400).json({ error: 'Kejadian ini tidak memiliki koordinat' });
+    return null;
+  }
+  return ev;
+}
 
 router.get('/regions', (req, res) => {
   const scope = currentKabupatenScope();
@@ -209,6 +228,62 @@ router.get('/hazard-layers/:key/histogram', async (req, res) => {
   try {
     const result = await fetchHistogram(layer.imageServerUrl, lat, lng, radius);
     res.json({ data: result });
+  } catch (err) {
+    res.status(502).json({ error: err.message || String(err) });
+  }
+});
+
+// Analisis Detail Bencana (Stage 4) - static facility layer defs (icon +
+// label), same pattern as /hazard-layers.
+router.get('/facility-layers', (req, res) => {
+  res.json({ data: FACILITY_LAYERS.map(({ key, label, icon }) => ({ key, label, icon })) });
+});
+
+// Facilities (BNPB GIS Basemap) within radius of one event, point-classified
+// against whichever hazard layer matches the event's jenisBencana (same
+// "auto match" used for the histogram card - see fetchHazardLayers on the
+// client) - matches the design handoff's own fetchFacilities +
+// fetchFacilityHazardClasses, done here in one round trip instead of two.
+router.get('/events/:uuid/facilities', async (req, res) => {
+  const ev = loadScopedEventWithCoords(req, res);
+  if (!ev) return;
+  const radius = Number(req.query.radius);
+  if (!Number.isFinite(radius) || radius <= 0) return res.status(400).json({ error: 'radius is required' });
+  try {
+    const byLayer = await fetchFacilities(ev.lat, ev.lng, radius);
+    const matchedHazard = HAZARD_LAYERS.find((l) => (l.matchJenis || []).includes(ev.jenisBencana));
+    if (matchedHazard) {
+      await Promise.all(Object.keys(byLayer).map(async (key) => {
+        const points = byLayer[key];
+        const classes = await classifyPointsByHazard(matchedHazard.imageServerUrl, points);
+        byLayer[key] = points.map((p, i) => ({ ...p, hazardClass: classes[i]?.hazardClass ?? null, hazardValue: classes[i]?.hazardValue ?? null }));
+      }));
+    }
+    res.json({ data: byLayer });
+  } catch (err) {
+    res.status(502).json({ error: err.message || String(err) });
+  }
+});
+
+// Building footprints (OSM Overpass) around one event, fixed 1500m radius
+// server-side regardless of the UI's radius selector (see buildings.js) -
+// classified the same way as facilities above, capped to the first 500
+// buildings (matches the design handoff's own sampling cap - getSamples on
+// thousands of building centroids at once isn't a realistic call).
+router.get('/events/:uuid/buildings', async (req, res) => {
+  const ev = loadScopedEventWithCoords(req, res);
+  if (!ev) return;
+  try {
+    const buildings = await fetchBuildingFootprints(ev.lat, ev.lng);
+    const matchedHazard = HAZARD_LAYERS.find((l) => (l.matchJenis || []).includes(ev.jenisBencana));
+    if (!matchedHazard || buildings.length === 0) {
+      return res.json({ data: buildings.map((b) => ({ ...b, hazardClass: null })) });
+    }
+    const CLASSIFY_CAP = 500;
+    const sample = buildings.slice(0, CLASSIFY_CAP);
+    const classes = await classifyPointsByHazard(matchedHazard.imageServerUrl, sample);
+    const data = buildings.map((b, i) => (i < CLASSIFY_CAP ? { ...b, hazardClass: classes[i]?.hazardClass ?? null } : { ...b, hazardClass: null }));
+    res.json({ data });
   } catch (err) {
     res.status(502).json({ error: err.message || String(err) });
   }

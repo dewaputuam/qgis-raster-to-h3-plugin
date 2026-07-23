@@ -28,6 +28,9 @@ export const api = {
   sikStatus: () => req('/admin/sik/status'),
   getHazardLayers: () => req('/hazard-layers'),
   getHazardHistogram: (key, lat, lng, radius) => req(`/hazard-layers/${encodeURIComponent(key)}/histogram?lat=${lat}&lng=${lng}&radius=${radius}`),
+  getFacilityLayers: () => req('/facility-layers'),
+  getEventFacilities: (uuid, radius) => req(`/events/${encodeURIComponent(uuid)}/facilities?radius=${radius}`),
+  getEventBuildings: (uuid) => req(`/events/${encodeURIComponent(uuid)}/buildings`),
   getNotifications: () => req('/notifications'),
   dismissNotifications: () => req('/notifications/dismiss', { method: 'POST' }),
 };

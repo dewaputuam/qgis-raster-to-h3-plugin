@@ -30,6 +30,18 @@ a { text-decoration: none; color: inherit; }
   0%, 100% { opacity: 0.2; }
   50% { opacity: 1; }
 }
+@keyframes analysisSpin {
+  to { transform: rotate(360deg); }
+}
+/* One keyframe shared by every message in the Tapak Bangunan loading card's
+   cycling status line - each <span> gets a negative animation-delay of
+   -(index * slotDuration) so they appear one after another in a loop
+   instead of all fading at once (see AnalisisDetailBencana.jsx). */
+@keyframes textCycle {
+  0%, 4% { opacity: 0; transform: translateY(4px); }
+  8%, 21% { opacity: 1; transform: translateY(0); }
+  25%, 100% { opacity: 0; transform: translateY(-4px); }
+}
 
 /* Scoped to the Analisis Detail Bencana map only (this file is global, and
    MapPanel.jsx's own Leaflet map should keep its default look) - restyles
@@ -48,6 +60,7 @@ a { text-decoration: none; color: inherit; }
 }
 .adb-map-wrap .leaflet-touch .leaflet-bar a { border-bottom: none; }
 .adb-ring-selected path { animation: ringPulse 1.8s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+.adb-marker-bounce { animation: markerBounce 0.9s ease; }
 
 button { font: inherit; color: inherit; }
 select, input { font: inherit; color: inherit; }
