@@ -22,6 +22,32 @@ a { text-decoration: none; color: inherit; }
   0%, 92%, 100% { transform: scaleY(1); }
   96% { transform: scaleY(0.12); }
 }
+@keyframes ringPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.55; transform: scale(1.06); }
+}
+@keyframes dotFade {
+  0%, 100% { opacity: 0.2; }
+  50% { opacity: 1; }
+}
+
+/* Scoped to the Analisis Detail Bencana map only (this file is global, and
+   MapPanel.jsx's own Leaflet map should keep its default look) - restyles
+   Leaflet's built-in zoom/scale controls to match the design handoff
+   (circular zoom buttons, bordered pill scale bar) instead of overriding
+   Leaflet's control CSS everywhere. */
+.adb-map-wrap .leaflet-control-zoom { border: none; box-shadow: none; }
+.adb-map-wrap .leaflet-control-zoom a {
+  width: 34px; height: 34px; line-height: 34px; border-radius: 50%;
+  background: var(--card-bg); border: 1px solid var(--border); color: var(--fg);
+  margin-bottom: 6px; box-shadow: var(--card-shadow);
+}
+.adb-map-wrap .leaflet-control-scale-line {
+  background: var(--card-bg); border: 1px solid var(--border2) !important; border-top: 1px solid var(--border2) !important;
+  border-radius: 999px; padding: 3px 10px; color: var(--fg2); font-size: 11px; font-weight: 700;
+}
+.adb-map-wrap .leaflet-touch .leaflet-bar a { border-bottom: none; }
+.adb-ring-selected path { animation: ringPulse 1.8s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
 
 button { font: inherit; color: inherit; }
 select, input { font: inherit; color: inherit; }

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
-import { themeVars, severityColor } from '../theme.js';
+import { THEME, themeVars, severityColor } from '../theme.js';
 import { Icon, DisasterIcon, ChevronIcon, disasterMarkerSvgHtml } from '../icons.jsx';
 import { api } from '../lib/api.js';
 import { formatRupiah } from '../lib/format.js';
@@ -26,10 +26,24 @@ export default function AnalisisDetailBencana() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showImpactMarkers, setShowImpactMarkers] = useState(true);
 
+  // Radius analysis (Stage 2): a preset (300/800/1500m) or a custom value
+  // once applied - distance-only zones for visual/analytical context, not
+  // an official risk model (see the footnote rendered with them).
+  const [radiusPreset, setRadiusPreset] = useState(800);
+  const [customRadiusInput, setCustomRadiusInput] = useState('800');
+  const [customRadiusApplied, setCustomRadiusApplied] = useState(null);
+  const [floatingTab, setFloatingTab] = useState('pengaturan');
+  const [showInset, setShowInset] = useState(false);
+  const selectedRadius = customRadiusApplied ?? radiusPreset;
+
   const rootRef = useRef(null);
   const mapElRef = useRef(null);
   const mapRef = useRef(null);
   const impactLayerRef = useRef(null);
+  const ringsLayerRef = useRef(null);
+  const insetElRef = useRef(null);
+  const insetMapRef = useRef(null);
+  const insetRectRef = useRef(null);
 
   useEffect(() => {
     if (!uuid) { setLoadError('missing-uuid'); return; }
@@ -94,11 +108,99 @@ export default function AnalisisDetailBencana() {
     impactLayerRef.current = group;
   }, [event, showImpactMarkers]);
 
+  // Radius rings: the 3 presets always drawn for scale context (300m solid,
+  // 800m dashed, 1500m dotted, muted color), plus the currently-selected
+  // radius (whichever preset, or a custom value) redrawn on top in accent
+  // color with a pulsing highlight - a custom radius doesn't remove the
+  // preset rings, it just means the highlight sits at a size that may not
+  // match any of them.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !event || !Number.isFinite(event.lat) || !Number.isFinite(event.lng)) return;
+    if (ringsLayerRef.current) {
+      map.removeLayer(ringsLayerRef.current);
+      ringsLayerRef.current = null;
+    }
+    const center = [event.lat, event.lng];
+    const group = L.layerGroup();
+    const accentColor = (darkMode ? THEME.dark : THEME.light).accentStrong;
+    const mutedColor = 'oklch(55% 0.02 255)';
+    const PRESETS = [
+      { r: 300, dash: null },
+      { r: 800, dash: '6 6' },
+      { r: 1500, dash: '2 6' },
+    ];
+    PRESETS.forEach(({ r, dash }) => {
+      const isSelected = customRadiusApplied == null && radiusPreset === r;
+      L.circle(center, {
+        radius: r,
+        color: isSelected ? accentColor : mutedColor,
+        weight: isSelected ? 3 : 1.5,
+        opacity: isSelected ? 0.9 : 0.45,
+        fillOpacity: 0,
+        dashArray: dash,
+        className: isSelected ? 'adb-ring-selected' : '',
+      }).addTo(group);
+    });
+    if (customRadiusApplied != null) {
+      L.circle(center, {
+        radius: customRadiusApplied,
+        color: accentColor,
+        weight: 3,
+        opacity: 0.9,
+        fillOpacity: 0,
+        className: 'adb-ring-selected',
+      }).addTo(group);
+    }
+    group.addTo(map);
+    ringsLayerRef.current = group;
+
+    // L.latLng(...).toBounds(sizeInMeters) computes bounds directly from the
+    // point + a size, with no dependency on any layer being attached to a
+    // map first (unlike calling .getBounds() on a not-yet-added L.circle,
+    // which throws since it needs the layer's own rendered pixel geometry).
+    const bounds = L.latLng(center).toBounds(selectedRadius * 2);
+    map.flyToBounds(bounds, { padding: [40, 40], duration: 0.6 });
+  }, [event, radiusPreset, customRadiusApplied, selectedRadius, darkMode]);
+
   useEffect(() => {
     const onFsChange = () => setIsFullscreen(!!document.fullscreenElement);
     document.addEventListener('fullscreenchange', onFsChange);
     return () => document.removeEventListener('fullscreenchange', onFsChange);
   }, []);
+
+  // Overview inset - a small non-interactive Bali-wide map with a rectangle
+  // tracking the main map's current viewport, toggled by the "Inset" tab in
+  // the floating panel stack rather than shown as a content panel itself.
+  useEffect(() => {
+    if (!showInset || !insetElRef.current || insetMapRef.current) return;
+    const inset = L.map(insetElRef.current, {
+      zoomControl: false, attributionControl: false, dragging: false, scrollWheelZoom: false,
+      doubleClickZoom: false, boxZoom: false, keyboard: false, touchZoom: false,
+    }).setView([-8.4, 115.19], 8);
+    L.tileLayer('https://cartodb-basemaps-{s}.global.ssl.fastly.net/light_nolabels/{z}/{x}/{y}.png', { maxZoom: 12 }).addTo(inset);
+    insetMapRef.current = inset;
+    setTimeout(() => inset.invalidateSize(), 50);
+    return () => {
+      inset.remove();
+      insetMapRef.current = null;
+      insetRectRef.current = null;
+    };
+  }, [showInset]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    const inset = insetMapRef.current;
+    if (!map || !inset) return;
+    function syncRect() {
+      const b = map.getBounds();
+      if (insetRectRef.current) inset.removeLayer(insetRectRef.current);
+      insetRectRef.current = L.rectangle(b, { color: 'oklch(55% 0.18 25)', weight: 2, fillOpacity: 0.08 }).addTo(inset);
+    }
+    syncRect();
+    map.on('moveend zoomend', syncRect);
+    return () => map.off('moveend zoomend', syncRect);
+  }, [showInset, event]);
 
   function toggleFullscreen() {
     if (!document.fullscreenElement) rootRef.current?.requestFullscreen?.();
@@ -181,7 +283,41 @@ export default function AnalisisDetailBencana() {
         </div>
       ) : (
         <div style={{ flex: 1, display: 'flex', position: 'relative', minHeight: 0 }}>
-          <div ref={mapElRef} style={{ flex: sidebarHidden ? '1 1 auto' : '0 0 74%', minWidth: 0 }} />
+          <div className="adb-map-wrap" style={{ position: 'relative', flex: sidebarHidden ? '1 1 auto' : '0 0 74%', minWidth: 0 }}>
+            <div ref={mapElRef} style={{ width: '100%', height: '100%' }} />
+
+            <div style={{ position: 'absolute', top: 16, left: 16, zIndex: 401, pointerEvents: 'none' }}>
+              <CompassGlyph />
+            </div>
+
+            {showInset && (
+              <div
+                style={{
+                  position: 'absolute', top: 16, right: 16, zIndex: 401, width: 160, height: 120,
+                  border: '1px solid var(--border2)', borderRadius: 10, overflow: 'hidden', boxShadow: 'var(--card-shadow)',
+                }}
+              >
+                <div ref={insetElRef} style={{ width: '100%', height: '100%' }} />
+              </div>
+            )}
+
+            <FloatingPanelStack
+              activeTab={floatingTab}
+              onChangeTab={setFloatingTab}
+              showInset={showInset}
+              onToggleInset={() => setShowInset((v) => !v)}
+              radiusPreset={radiusPreset}
+              customRadiusApplied={customRadiusApplied}
+              selectedRadius={selectedRadius}
+              customRadiusInput={customRadiusInput}
+              onSelectPreset={(r) => { setRadiusPreset(r); setCustomRadiusApplied(null); }}
+              onCustomInputChange={setCustomRadiusInput}
+              onApplyCustom={() => {
+                const n = Number(customRadiusInput);
+                if (Number.isFinite(n) && n > 0) setCustomRadiusApplied(Math.round(n));
+              }}
+            />
+          </div>
 
           {!sidebarHidden && (
             <div
@@ -312,6 +448,116 @@ function TabBtn({ active, onClick, children }) {
     >
       {children}
     </button>
+  );
+}
+
+const RADIUS_PRESETS = [300, 800, 1500];
+
+function radiusAreaKm2(radiusMeters) {
+  return ((Math.PI * radiusMeters * radiusMeters) / 1e6).toFixed(2);
+}
+
+// Bottom-left floating stack: Pengaturan (radius controls, default) and
+// Legenda are mutually-exclusive content tabs; Inset is a plain toggle for
+// the overview mini-map shown elsewhere on the map, not a content panel of
+// its own - see the design handoff's own description of that tab.
+function FloatingPanelStack({
+  activeTab, onChangeTab, showInset, onToggleInset,
+  radiusPreset, customRadiusApplied, selectedRadius, customRadiusInput, onSelectPreset, onCustomInputChange, onApplyCustom,
+}) {
+  return (
+    <div style={{ position: 'absolute', bottom: 16, left: 16, zIndex: 401, display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 260 }}>
+      {activeTab === 'pengaturan' && (
+        <div style={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 12, padding: 14, boxShadow: 'var(--card-shadow)' }}>
+          <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.03em', marginBottom: 10 }}>
+            Radius Analisis
+          </div>
+          <div style={{ display: 'flex', gap: 4, marginBottom: 10 }}>
+            {RADIUS_PRESETS.map((r) => {
+              const active = customRadiusApplied == null && radiusPreset === r;
+              return (
+                <button
+                  key={r}
+                  onClick={() => onSelectPreset(r)}
+                  style={{
+                    flex: 1, fontFamily: 'inherit', fontSize: 11.5, fontWeight: 700, padding: '7px 6px', borderRadius: 999, border: '1px solid var(--border2)',
+                    cursor: 'pointer', background: active ? 'white' : 'var(--band)', color: active ? 'var(--accent-strong)' : 'var(--fg2)',
+                  }}
+                >
+                  {r.toLocaleString('id-ID')} m
+                </button>
+              );
+            })}
+          </div>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 10 }}>
+            <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600 }}>Kustom:</span>
+            <input
+              type="number"
+              value={customRadiusInput}
+              onChange={(e) => onCustomInputChange(e.target.value)}
+              style={{ flex: 1, fontFamily: 'inherit', fontSize: 12, padding: '6px 8px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--band)', color: 'var(--fg)', width: 0, minWidth: 0 }}
+            />
+            <span style={{ fontSize: 11, color: 'var(--muted)' }}>m</span>
+            <button
+              onClick={onApplyCustom}
+              aria-label="Terapkan radius kustom"
+              style={{ width: 26, height: 26, borderRadius: '50%', border: 'none', background: 'var(--accent-strong)', color: 'white', cursor: 'pointer', fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+            >
+              →
+            </button>
+          </div>
+          <div style={{ fontSize: 10.5, color: 'var(--muted)', lineHeight: 1.4, borderTop: '1px solid var(--border)', paddingTop: 8 }}>
+            Zona berbasis jarak dari titik kejadian — bukan pemodelan risiko resmi.
+            Luas area dianalisis: {radiusAreaKm2(selectedRadius)} km² (radius {selectedRadius} m).
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'legenda' && (
+        <div style={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 12, padding: 14, boxShadow: 'var(--card-shadow)' }}>
+          <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.03em', marginBottom: 8 }}>
+            Layer Bahaya (InaRISK)
+          </div>
+          <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.5 }}>
+            Daftar layer bahaya akan tersedia pada tahap berikutnya.
+          </div>
+        </div>
+      )}
+
+      <div style={{ display: 'flex', gap: 6 }}>
+        <FloatingTabIcon active={activeTab === 'pengaturan'} onClick={() => onChangeTab('pengaturan')} label="Pengaturan" glyph="⚙" />
+        <FloatingTabIcon active={activeTab === 'legenda'} onClick={() => onChangeTab('legenda')} label="Legenda" glyph="☰" />
+        <FloatingTabIcon active={showInset} onClick={onToggleInset} label="Inset" glyph="▢" />
+      </div>
+    </div>
+  );
+}
+
+function FloatingTabIcon({ active, onClick, label, glyph }) {
+  return (
+    <button
+      onClick={onClick}
+      aria-label={label}
+      title={label}
+      style={{
+        width: 34, height: 34, borderRadius: '50%', border: '1px solid var(--border)', cursor: 'pointer', fontSize: 14,
+        background: active ? 'var(--accent-strong)' : 'var(--card-bg)', color: active ? 'white' : 'var(--fg2)', boxShadow: 'var(--card-shadow)',
+      }}
+    >
+      {glyph}
+    </button>
+  );
+}
+
+function CompassGlyph() {
+  return (
+    <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--card-bg)', border: '1px solid var(--border2)', boxShadow: 'var(--card-shadow)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="var(--fg2)" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 6l2.5 6.5L12 15l-2.5-2.5z" fill="var(--accent-strong)" stroke="none" />
+        <text x="12" y="4.5" textAnchor="middle" fontSize="6" fill="var(--fg2)" stroke="none" fontWeight="700">N</text>
+      </svg>
+    </div>
   );
 }
 
