@@ -26,6 +26,8 @@ export const api = {
   sikLogin: (username, password, rememberSession) => req('/admin/sik/login', { method: 'POST', body: JSON.stringify({ username, password, rememberSession }) }),
   sikLogout: () => req('/admin/sik/logout', { method: 'POST' }),
   sikStatus: () => req('/admin/sik/status'),
+  getHazardLayers: () => req('/hazard-layers'),
+  getHazardHistogram: (key, lat, lng, radius) => req(`/hazard-layers/${encodeURIComponent(key)}/histogram?lat=${lat}&lng=${lng}&radius=${radius}`),
   getNotifications: () => req('/notifications'),
   dismissNotifications: () => req('/notifications/dismiss', { method: 'POST' }),
 };

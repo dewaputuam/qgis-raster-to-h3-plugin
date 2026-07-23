@@ -8,6 +8,7 @@ import { fetchCuaca } from '../lib/bmkg.js';
 import { encrypt } from '../lib/crypto.js';
 import { isPointInKabupaten } from '../lib/kabupatenPolygons.js';
 import { resolveKabupatenScope } from '../lib/kabupatenScope.js';
+import { HAZARD_LAYERS, findHazardLayer, fetchHistogram } from '../lib/inarisk.js';
 
 export const router = Router();
 
@@ -185,4 +186,30 @@ router.get('/notifications', (req, res) => {
 router.post('/notifications/dismiss', (req, res) => {
   db.clearNotificationQueue();
   res.json({ ok: true });
+});
+
+// Analisis Detail Bencana (Stage 3) - static layer defs the client needs to
+// build checkboxes and the image-overlay URL (mapServerUrl), without
+// hardcoding the same 11-layer list twice.
+router.get('/hazard-layers', (req, res) => {
+  res.json({ data: HAZARD_LAYERS.map(({ key, label, mapServerUrl, color, matchJenis }) => ({ key, label, mapServerUrl, color, matchJenis })) });
+});
+
+// Proxied (see fetchHistogram in lib/inarisk.js for why - CORS) - the JSON
+// hazard-index histogram for one layer in a bbox around a point.
+router.get('/hazard-layers/:key/histogram', async (req, res) => {
+  const layer = findHazardLayer(req.params.key);
+  if (!layer) return res.status(404).json({ error: 'Unknown hazard layer' });
+  const lat = Number(req.query.lat);
+  const lng = Number(req.query.lng);
+  const radius = Number(req.query.radius);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || !Number.isFinite(radius)) {
+    return res.status(400).json({ error: 'lat, lng, and radius are required' });
+  }
+  try {
+    const result = await fetchHistogram(layer.imageServerUrl, lat, lng, radius);
+    res.json({ data: result });
+  } catch (err) {
+    res.status(502).json({ error: err.message || String(err) });
+  }
 });

@@ -36,6 +36,17 @@ export default function AnalisisDetailBencana() {
   const [showInset, setShowInset] = useState(false);
   const selectedRadius = customRadiusApplied ?? radiusPreset;
 
+  // Hazard layers (Stage 3, BNPB InaRISK) - `hazardLayers` is the static
+  // list from the server (see /api/hazard-layers); `layerToggles` is which
+  // ones are currently checked; `histograms` caches each toggled layer's
+  // computeHistograms result (loading/ok/empty/error) keyed by layer key.
+  const [hazardLayers, setHazardLayers] = useState([]);
+  const [layerToggles, setLayerToggles] = useState({});
+  const [histograms, setHistograms] = useState({});
+  const [legendaExpanded, setLegendaExpanded] = useState(false);
+  const [hazardInfoOpen, setHazardInfoOpen] = useState(false);
+  const autoSelectedRef = useRef(false);
+
   const rootRef = useRef(null);
   const mapElRef = useRef(null);
   const mapRef = useRef(null);
@@ -44,6 +55,7 @@ export default function AnalisisDetailBencana() {
   const insetElRef = useRef(null);
   const insetMapRef = useRef(null);
   const insetRectRef = useRef(null);
+  const hazardOverlaysRef = useRef({});
 
   useEffect(() => {
     if (!uuid) { setLoadError('missing-uuid'); return; }
@@ -162,6 +174,81 @@ export default function AnalisisDetailBencana() {
     const bounds = L.latLng(center).toBounds(selectedRadius * 2);
     map.flyToBounds(bounds, { padding: [40, 40], duration: 0.6 });
   }, [event, radiusPreset, customRadiusApplied, selectedRadius, darkMode]);
+
+  // Fetch the static hazard layer list once (see /api/hazard-layers).
+  useEffect(() => {
+    api.getHazardLayers().then((r) => setHazardLayers(r.data)).catch(() => setHazardLayers([]));
+  }, []);
+
+  // Auto-select whichever hazard layer matches this event's jenisBencana,
+  // once, the first time both the event and the layer list are available -
+  // matches the design handoff's own behavior (a Tanah Longsor event starts
+  // with the Tanah Longsor layer already checked, not empty).
+  useEffect(() => {
+    if (autoSelectedRef.current || !event || hazardLayers.length === 0) return;
+    autoSelectedRef.current = true;
+    const match = hazardLayers.find((l) => (l.matchJenis || []).includes(event.jenisBencana));
+    if (match) setLayerToggles((prev) => ({ ...prev, [match.key]: true }));
+  }, [event, hazardLayers]);
+
+  // Histogram fetch (proxied - see server/lib/inarisk.js for why) for every
+  // currently-toggled layer, re-fetched whenever the radius changes since
+  // the histogram is computed over a bbox derived from it. NOT verified
+  // against the real BNPB server in this sandbox (no outbound access to
+  // gis.bnpb.go.id here) - the request shape matches the design handoff's
+  // own reference code, but the response parsing is unverified until
+  // tested from a real network environment.
+  useEffect(() => {
+    if (!event || !Number.isFinite(event.lat) || !Number.isFinite(event.lng)) return;
+    const activeKeys = Object.entries(layerToggles).filter(([, on]) => on).map(([k]) => k);
+    activeKeys.forEach((key) => {
+      setHistograms((prev) => ({ ...prev, [key]: { status: 'loading' } }));
+      api.getHazardHistogram(key, event.lat, event.lng, selectedRadius)
+        .then((r) => setHistograms((prev) => ({ ...prev, [key]: r.data })))
+        .catch(() => setHistograms((prev) => ({ ...prev, [key]: { status: 'error' } })));
+    });
+  }, [event, layerToggles, selectedRadius]);
+
+  // Hazard image overlays - each toggled layer's ArcGIS MapServer `/export`
+  // image, sized/cropped to the map's current viewport and refreshed on
+  // every pan/zoom so it stays aligned (the export endpoint renders a fresh
+  // image per bbox rather than serving static tiles). Loaded directly by
+  // the browser (not proxied) - CORS blocks JS from reading pixel data off
+  // an image, not from displaying one via <img>/L.imageOverlay, so this
+  // part doesn't need the same server-side proxy as the JSON histogram call.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    function refreshOverlays() {
+      const b = map.getBounds();
+      const size = map.getSize();
+      Object.entries(layerToggles).forEach(([key, on]) => {
+        const existing = hazardOverlaysRef.current[key];
+        if (!on) {
+          if (existing) { map.removeLayer(existing); delete hazardOverlaysRef.current[key]; }
+          return;
+        }
+        const def = hazardLayers.find((l) => l.key === key);
+        if (!def) return;
+        const params = new URLSearchParams({
+          bbox: [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].join(','),
+          bboxSR: '4326', imageSR: '4326',
+          size: `${Math.round(size.x)},${Math.round(size.y)}`,
+          format: 'png32', transparent: 'true', dpi: '96', f: 'image',
+        });
+        const url = `${def.mapServerUrl}/export?${params.toString()}`;
+        if (existing) map.removeLayer(existing);
+        hazardOverlaysRef.current[key] = L.imageOverlay(url, b, { opacity: 0.6 }).addTo(map);
+      });
+      // Drop overlays for layers that got unchecked entirely.
+      Object.keys(hazardOverlaysRef.current).forEach((key) => {
+        if (!layerToggles[key]) { map.removeLayer(hazardOverlaysRef.current[key]); delete hazardOverlaysRef.current[key]; }
+      });
+    }
+    refreshOverlays();
+    map.on('moveend', refreshOverlays);
+    return () => map.off('moveend', refreshOverlays);
+  }, [layerToggles, hazardLayers, event]);
 
   useEffect(() => {
     const onFsChange = () => setIsFullscreen(!!document.fullscreenElement);
@@ -316,6 +403,11 @@ export default function AnalisisDetailBencana() {
                 const n = Number(customRadiusInput);
                 if (Number.isFinite(n) && n > 0) setCustomRadiusApplied(Math.round(n));
               }}
+              hazardLayers={hazardLayers}
+              layerToggles={layerToggles}
+              onToggleLayer={(key) => setLayerToggles((prev) => ({ ...prev, [key]: !prev[key] }))}
+              legendaExpanded={legendaExpanded}
+              onToggleLegendaExpanded={() => setLegendaExpanded((v) => !v)}
             />
           </div>
 
@@ -342,7 +434,16 @@ export default function AnalisisDetailBencana() {
 
               <div style={{ flex: 1, padding: '0 16px 20px', fontSize: 12.5, color: 'var(--muted)' }}>
                 {tab === 'profil' ? (
-                  <PlaceholderCard title="Profil Wilayah" note="Indeks Bahaya InaRISK, Tapak Bangunan, Fasilitas Umum, dan Demografi Terdampak akan tampil di sini pada tahap berikutnya." />
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    <HazardIndexCard
+                      hazardLayers={hazardLayers}
+                      layerToggles={layerToggles}
+                      histograms={histograms}
+                      infoOpen={hazardInfoOpen}
+                      onToggleInfo={() => setHazardInfoOpen((v) => !v)}
+                    />
+                    <PlaceholderCard title="Tapak Bangunan, Fasilitas Umum & Demografi" note="Akan tampil di sini pada tahap berikutnya." />
+                  </div>
                 ) : (
                   <PlaceholderCard title="Detil Kejadian" note="Cuaca Terkini, Total Dampak Tercatat, dan Dampak per Lokasi akan tampil di sini pada tahap berikutnya." />
                 )}
@@ -457,13 +558,134 @@ function radiusAreaKm2(radiusMeters) {
   return ((Math.PI * radiusMeters * radiusMeters) / 1e6).toFixed(2);
 }
 
+// Classification thresholds match the design handoff's own reference
+// (Rendah <0.33 · Sedang 0.33-0.67 · Tinggi >0.67 on the raster's 0-1 hazard
+// index). Every INDEKS_BAHAYA_* ImageServer name ends in "_30" (see
+// server/lib/inarisk.js's mapServerUrl values), i.e. a 30m cell - so one
+// pixel is 900 sqm = 0.09 ha, used to turn a histogram's pixel counts into
+// a hectare figure per class.
+const CLASS_COLORS = { Rendah: 'oklch(60% 0.12 150)', Sedang: 'oklch(65% 0.14 80)', Tinggi: 'oklch(55% 0.18 30)' };
+const PIXEL_AREA_HA = 0.09;
+
+function classifyHistogram(hist) {
+  if (!hist || hist.status !== 'ok' || !Array.isArray(hist.counts) || hist.counts.length === 0) return null;
+  const { min, max, counts } = hist;
+  const pixelsByClass = { Rendah: 0, Sedang: 0, Tinggi: 0 };
+  counts.forEach((count, i) => {
+    const binValue = min + ((i + 0.5) / counts.length) * (max - min);
+    const cls = binValue < 0.33 ? 'Rendah' : binValue < 0.67 ? 'Sedang' : 'Tinggi';
+    pixelsByClass[cls] += count;
+  });
+  const totalPixels = counts.reduce((a, b) => a + b, 0);
+  if (totalPixels === 0) return { hectaresByClass: pixelsByClass, totalPixels: 0, dominant: null };
+  const hectaresByClass = Object.fromEntries(Object.entries(pixelsByClass).map(([k, v]) => [k, v * PIXEL_AREA_HA]));
+  const dominant = Object.entries(pixelsByClass).sort((a, b) => b[1] - a[1])[0][0];
+  return { hectaresByClass, totalPixels, dominant };
+}
+
+// "Indeks Bahaya InaRISK" card (Profil Wilayah tab) - one row per currently
+// toggled hazard layer, showing its dominant classification and a small
+// hectares-per-class bar chart from the histogram computed over the
+// selected radius. Loading/empty/error states are copy-per-layer since
+// different layers can be in different states (e.g. one still loading
+// while another already errored).
+function HazardIndexCard({ hazardLayers, layerToggles, histograms, infoOpen, onToggleInfo }) {
+  const activeKeys = Object.entries(layerToggles).filter(([, on]) => on).map(([k]) => k);
+  return (
+    <div style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 14, background: 'var(--card-bg)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: infoOpen ? 8 : 10 }}>
+        <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--fg)' }}>Indeks Bahaya InaRISK</div>
+        <button
+          onClick={onToggleInfo}
+          aria-label="Keterangan klasifikasi"
+          style={{
+            width: 18, height: 18, borderRadius: '50%', border: '1px solid var(--border2)', background: 'var(--band)',
+            color: 'var(--muted)', fontSize: 10.5, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+          }}
+        >
+          i
+        </button>
+      </div>
+
+      {infoOpen && (
+        <div style={{ fontSize: 10.5, color: 'var(--muted)', lineHeight: 1.5, background: 'var(--band)', borderRadius: 8, padding: '8px 10px', marginBottom: 10 }}>
+          Klasifikasi: Rendah &lt; 0,33 · Sedang 0,33–0,67 · Tinggi &gt; 0,67 — nilai rata-rata raster pada radius analisis yang dipilih. Bukan pemodelan risiko resmi BNPB.
+        </div>
+      )}
+
+      {activeKeys.length === 0 ? (
+        <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.5 }}>
+          Belum ada layer bahaya yang dipilih. Aktifkan salah satu layer pada tab "Legenda" di peta untuk melihat indeksnya di sini.
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {activeKeys.map((key) => {
+            const def = hazardLayers.find((l) => l.key === key);
+            const hist = histograms[key];
+            return (
+              <div key={key}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                  <span style={{ width: 9, height: 9, borderRadius: 3, background: def?.color || 'var(--muted)', flexShrink: 0 }} />
+                  <span style={{ fontSize: 11.5, fontWeight: 700 }}>{def?.label || key}</span>
+                </div>
+                <HazardIndexRow hist={hist} />
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function HazardIndexRow({ hist }) {
+  if (!hist || hist.status === 'loading') {
+    return <div style={{ fontSize: 11, color: 'var(--muted)' }}>Menghitung indeks…</div>;
+  }
+  if (hist.status === 'error') {
+    return <div style={{ fontSize: 11, color: 'oklch(55% 0.18 25)' }}>Gagal memuat data InaRISK. Coba lagi nanti.</div>;
+  }
+  if (hist.status === 'empty') {
+    return <div style={{ fontSize: 11, color: 'var(--muted)' }}>Tidak ada data raster pada radius ini.</div>;
+  }
+  const result = classifyHistogram(hist);
+  if (!result || result.totalPixels === 0) {
+    return <div style={{ fontSize: 11, color: 'var(--muted)' }}>Tidak ada data raster pada radius ini.</div>;
+  }
+  const { hectaresByClass, dominant } = result;
+  const maxHa = Math.max(...Object.values(hectaresByClass), 0.001);
+  return (
+    <div>
+      <div style={{ display: 'inline-block', fontSize: 10.5, fontWeight: 800, padding: '2px 8px', borderRadius: 999, background: CLASS_COLORS[dominant], color: 'white', marginBottom: 8 }}>
+        Dominan: {dominant}
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        {['Rendah', 'Sedang', 'Tinggi'].map((cls) => (
+          <div key={cls} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontSize: 10, width: 42, color: 'var(--muted)', flexShrink: 0 }}>{cls}</span>
+            <div style={{ flex: 1, height: 8, borderRadius: 4, background: 'var(--band)', overflow: 'hidden' }}>
+              <div style={{ width: `${(hectaresByClass[cls] / maxHa) * 100}%`, height: '100%', background: CLASS_COLORS[cls], borderRadius: 4 }} />
+            </div>
+            <span style={{ fontSize: 10, width: 62, textAlign: 'right', color: 'var(--fg2)', flexShrink: 0 }}>{hectaresByClass[cls].toFixed(1)} ha</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // Bottom-left floating stack: Pengaturan (radius controls, default) and
 // Legenda are mutually-exclusive content tabs; Inset is a plain toggle for
 // the overview mini-map shown elsewhere on the map, not a content panel of
 // its own - see the design handoff's own description of that tab.
+// Layers beyond this count are hidden behind the "show more" toggle - the
+// design handoff calls for that once there are more than 6 (there are 11).
+const LEGENDA_COLLAPSED_COUNT = 6;
+
 function FloatingPanelStack({
   activeTab, onChangeTab, showInset, onToggleInset,
   radiusPreset, customRadiusApplied, selectedRadius, customRadiusInput, onSelectPreset, onCustomInputChange, onApplyCustom,
+  hazardLayers, layerToggles, onToggleLayer, legendaExpanded, onToggleLegendaExpanded,
 }) {
   return (
     <div style={{ position: 'absolute', bottom: 16, left: 16, zIndex: 401, display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 260 }}>
@@ -514,13 +736,33 @@ function FloatingPanelStack({
       )}
 
       {activeTab === 'legenda' && (
-        <div style={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 12, padding: 14, boxShadow: 'var(--card-shadow)' }}>
+        <div style={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 12, padding: 14, boxShadow: 'var(--card-shadow)', maxHeight: 320, overflowY: 'auto' }}>
           <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.03em', marginBottom: 8 }}>
             Layer Bahaya (InaRISK)
           </div>
-          <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.5 }}>
-            Daftar layer bahaya akan tersedia pada tahap berikutnya.
-          </div>
+          {hazardLayers.length === 0 ? (
+            <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.5 }}>Memuat daftar layer…</div>
+          ) : (
+            <>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {(legendaExpanded ? hazardLayers : hazardLayers.slice(0, LEGENDA_COLLAPSED_COUNT)).map((layer) => (
+                  <label key={layer.key} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, cursor: 'pointer' }}>
+                    <input type="checkbox" checked={!!layerToggles[layer.key]} onChange={() => onToggleLayer(layer.key)} />
+                    <span style={{ width: 10, height: 10, borderRadius: 3, background: layer.color, flexShrink: 0 }} />
+                    <span style={{ color: 'var(--fg2)' }}>{layer.label}</span>
+                  </label>
+                ))}
+              </div>
+              {hazardLayers.length > LEGENDA_COLLAPSED_COUNT && (
+                <button
+                  onClick={onToggleLegendaExpanded}
+                  style={{ marginTop: 8, background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 700, color: 'var(--accent-strong)', padding: 0 }}
+                >
+                  {legendaExpanded ? 'Tampilkan lebih sedikit ▲' : `Tampilkan ${hazardLayers.length - LEGENDA_COLLAPSED_COUNT} lainnya ▼`}
+                </button>
+              )}
+            </>
+          )}
         </div>
       )}
 
