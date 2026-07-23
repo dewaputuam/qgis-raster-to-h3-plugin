@@ -64,3 +64,33 @@ a { text-decoration: none; color: inherit; }
 
 button { font: inherit; color: inherit; }
 select, input { font: inherit; color: inherit; }
+
+/* Analisis Detail Bencana - responsive: below this width the map/sidebar
+   two-column layout doesn't have room to breathe, so stack them instead
+   (map gets a fixed viewport-relative height, sidebar takes the rest of the
+   scroll). Scoped to .adb-content-row so it doesn't touch MapPanel.jsx's
+   own layout on the main dashboard. */
+@media (max-width: 860px) {
+  .adb-content-row { flex-direction: column; }
+  .adb-content-row .adb-map-wrap { flex: 0 0 46vh !important; }
+  .adb-content-row .adb-sidebar-col { flex: 1 1 auto !important; min-width: 0 !important; border-left: none !important; border-top: 1px solid var(--border); }
+}
+
+/* Analisis Detail Bencana - print/PDF (triggered by the header's "PDF"
+   button, window.print()). Simplified relative to the design handoff's own
+   3-column layout with a dedicated print-only facility column: here the
+   existing map/sidebar columns are reused directly rather than duplicating
+   their content into parallel print-only markup. `.print-hide` drops
+   interactive-only chrome (floating controls, dark mode/fullscreen/share
+   buttons, hide-panel FABs); `.print-page` forces the Demografi Terdampak
+   card onto its own page for readability, matching the reference's
+   dedicated second page for that section. */
+@media print {
+  @page { size: landscape; margin: 10mm; }
+  .print-hide { display: none !important; }
+  body { background: white !important; }
+  .adb-content-row { display: flex !important; flex-direction: row !important; height: auto !important; min-height: 0 !important; }
+  .adb-map-wrap { flex: 0 0 55% !important; height: 260mm !important; page-break-inside: avoid; }
+  .adb-sidebar-col { flex: 1 1 auto !important; overflow: visible !important; height: auto !important; border-left: 1px solid var(--border2) !important; }
+  .print-page { page-break-before: always; }
+}

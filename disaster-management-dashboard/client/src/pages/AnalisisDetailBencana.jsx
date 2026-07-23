@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
+import { toPng } from 'html-to-image';
 import { THEME, themeVars, severityColor } from '../theme.js';
 import { Icon, DisasterIcon, ChevronIcon, disasterMarkerSvgHtml, WeatherIcon } from '../icons.jsx';
 import { api } from '../lib/api.js';
@@ -92,6 +93,7 @@ export default function AnalisisDetailBencana() {
   const facilityOverlaysRef = useRef({});
   const facilityMarkersRef = useRef({});
   const buildingLayerRef = useRef(null);
+  const sectionRefs = useRef({});
 
   useEffect(() => {
     if (!uuid) { setLoadError('missing-uuid'); return; }
@@ -510,6 +512,34 @@ export default function AnalisisDetailBencana() {
     marker.openPopup();
   }
 
+  // Per-card "save as image" (Stage 6) - captures whichever card element is
+  // registered under `key` (see sectionRef below) as a PNG, matching the
+  // design handoff's own saveCardImage (2x pixel ratio, background color
+  // sampled from the element's own computed style so dark mode exports
+  // correctly instead of a transparent/black background).
+  function sectionRef(key) {
+    return (el) => { sectionRefs.current[key] = el; };
+  }
+
+  function saveCardImage(key, filename) {
+    const el = sectionRefs.current[key];
+    if (!el) return;
+    // skipFonts: true - the card's own text still renders fine with
+    // whatever font is already active in the DOM at capture time; without
+    // this, html-to-image tries to re-fetch and inline every @font-face in
+    // the page's stylesheets (including the cross-origin Google Fonts
+    // link in index.html), which hangs the whole export if that host is
+    // unreachable rather than gracefully degrading.
+    toPng(el, { pixelRatio: 2, backgroundColor: getComputedStyle(el).backgroundColor || '#ffffff', skipFonts: true })
+      .then((dataUrl) => {
+        const a = document.createElement('a');
+        a.href = dataUrl;
+        a.download = `${filename}.png`;
+        a.click();
+      })
+      .catch(() => {});
+  }
+
   function shareFacilityWhatsApp(facilityLabel, row) {
     const lines = [
       '*VERIFIKASI SITUASI FASILITAS UMUM*',
@@ -574,7 +604,7 @@ export default function AnalisisDetailBencana() {
             </div>
           )}
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+        <div className="print-hide" style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
           <button onClick={toggleFullscreen} aria-label="Fullscreen" style={{ ...iconBtnStyle, display: window.innerWidth < 760 ? 'none' : 'flex' }}>
             <ExpandGlyph expanded={isFullscreen} />
           </button>
@@ -598,16 +628,17 @@ export default function AnalisisDetailBencana() {
           <a href="/" style={{ fontSize: 13, fontWeight: 700, color: 'var(--accent-strong)' }}>← Kembali ke beranda</a>
         </div>
       ) : (
-        <div style={{ flex: 1, display: 'flex', position: 'relative', minHeight: 0 }}>
+        <div className="adb-content-row" style={{ flex: 1, display: 'flex', position: 'relative', minHeight: 0 }}>
           <div className="adb-map-wrap" style={{ position: 'relative', flex: sidebarHidden ? '1 1 auto' : '0 0 74%', minWidth: 0 }}>
             <div ref={mapElRef} style={{ width: '100%', height: '100%' }} />
 
-            <div style={{ position: 'absolute', top: 16, left: 16, zIndex: 401, pointerEvents: 'none' }}>
+            <div className="print-hide" style={{ position: 'absolute', top: 16, left: 16, zIndex: 401, pointerEvents: 'none' }}>
               <CompassGlyph />
             </div>
 
             {showInset && (
               <div
+                className="print-hide"
                 style={{
                   position: 'absolute', top: 16, right: 16, zIndex: 401, width: 160, height: 120,
                   border: '1px solid var(--border2)', borderRadius: 10, overflow: 'hidden', boxShadow: 'var(--card-shadow)',
@@ -644,6 +675,7 @@ export default function AnalisisDetailBencana() {
 
           {!sidebarHidden && (
             <div
+              className="adb-sidebar-col"
               style={{
                 flex: '0 0 26%', minWidth: 320, borderLeft: '1px solid var(--border)', background: 'var(--bg)',
                 display: 'flex', flexDirection: 'column', overflowY: 'auto',
@@ -672,6 +704,8 @@ export default function AnalisisDetailBencana() {
                       histograms={histograms}
                       infoOpen={hazardInfoOpen}
                       onToggleInfo={() => setHazardInfoOpen((v) => !v)}
+                      cardRef={sectionRef('hazard')}
+                      onSaveImage={() => saveCardImage('hazard', 'Indeks-Bahaya-InaRISK')}
                     />
                     <TapakBangunanCard
                       event={event}
@@ -680,6 +714,8 @@ export default function AnalisisDetailBencana() {
                       buildingLayerOn={buildingLayerOn}
                       onToggleBuildingLayer={() => setBuildingLayerOn((v) => !v)}
                       selectedRadius={selectedRadius}
+                      cardRef={sectionRef('bangunan')}
+                      onSaveImage={() => saveCardImage('bangunan', 'Tapak-Bangunan')}
                     />
                     <FasilitasCard
                       event={event}
@@ -693,13 +729,28 @@ export default function AnalisisDetailBencana() {
                       onToggleInfo={() => setFacilityInfoOpen((v) => !v)}
                       onRowClick={bounceFacilityMarker}
                       onShareRow={shareFacilityWhatsApp}
+                      cardRef={sectionRef('fasilitas')}
+                      onSaveImage={() => saveCardImage('fasilitas', 'Fasilitas-Umum')}
                     />
-                    <DemografiCard desaProfile={desaProfile} />
+                    <DemografiCard
+                      desaProfile={desaProfile}
+                      cardRef={sectionRef('demografi')}
+                      onSaveImage={() => saveCardImage('demografi', 'Demografi-Terdampak')}
+                    />
                   </div>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                    <CuacaCard status={weatherStatus} weather={weather} />
-                    <TotalDampakCard event={event} />
+                    <CuacaCard
+                      status={weatherStatus}
+                      weather={weather}
+                      cardRef={sectionRef('cuaca')}
+                      onSaveImage={() => saveCardImage('cuaca', 'Cuaca-Terkini')}
+                    />
+                    <TotalDampakCard
+                      event={event}
+                      cardRef={sectionRef('totalDampak')}
+                      onSaveImage={() => saveCardImage('totalDampak', 'Total-Dampak-Tercatat')}
+                    />
                     <DampakPerLokasiCard event={event} onLocate={focusImpactMarker} />
                   </div>
                 )}
@@ -709,6 +760,7 @@ export default function AnalisisDetailBencana() {
 
           {sidebarHidden && (
             <button
+              className="print-hide"
               onClick={() => setSidebarHidden(false)}
               aria-label="Tampilkan panel"
               style={{
@@ -785,6 +837,30 @@ function PlaceholderCard({ title, note }) {
   );
 }
 
+// Quiet icon button (not a bright CTA) shown on every analysis card next to
+// the "i" info button where one exists - captures that card as a PNG via
+// saveCardImage/html-to-image. Styled to match: 22x22px, 1px border, band
+// background, muted icon color (see the design handoff's own spec).
+function SaveImageButton({ onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      aria-label="Simpan sebagai gambar"
+      title="Simpan sebagai gambar"
+      style={{
+        width: 22, height: 22, borderRadius: 7, border: '1px solid var(--border2)', background: 'var(--band)',
+        color: 'var(--muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, padding: 0,
+      }}
+    >
+      <svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+        <path d="M12 3v12" />
+        <path d="M7 10l5 5 5-5" />
+        <path d="M4 19h16" />
+      </svg>
+    </button>
+  );
+}
+
 function Chip({ children }) {
   return (
     <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 999, background: 'var(--band)', color: 'var(--fg2)' }}>
@@ -857,22 +933,25 @@ function classifyHistogram(hist) {
 // selected radius. Loading/empty/error states are copy-per-layer since
 // different layers can be in different states (e.g. one still loading
 // while another already errored).
-function HazardIndexCard({ hazardLayers, layerToggles, histograms, infoOpen, onToggleInfo }) {
+function HazardIndexCard({ hazardLayers, layerToggles, histograms, infoOpen, onToggleInfo, cardRef, onSaveImage }) {
   const activeKeys = Object.entries(layerToggles).filter(([, on]) => on).map(([k]) => k);
   return (
-    <div style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 14, background: 'var(--card-bg)' }}>
+    <div ref={cardRef} style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 14, background: 'var(--card-bg)' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: infoOpen ? 8 : 10 }}>
         <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--fg)' }}>Indeks Bahaya InaRISK</div>
-        <button
-          onClick={onToggleInfo}
-          aria-label="Keterangan klasifikasi"
-          style={{
-            width: 18, height: 18, borderRadius: '50%', border: '1px solid var(--border2)', background: 'var(--band)',
-            color: 'var(--muted)', fontSize: 10.5, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-          }}
-        >
-          i
-        </button>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }} className="print-hide">
+          <SaveImageButton onClick={onSaveImage} />
+          <button
+            onClick={onToggleInfo}
+            aria-label="Keterangan klasifikasi"
+            style={{
+              width: 18, height: 18, borderRadius: '50%', border: '1px solid var(--border2)', background: 'var(--band)',
+              color: 'var(--muted)', fontSize: 10.5, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+            }}
+          >
+            i
+          </button>
+        </div>
       </div>
 
       {infoOpen && (
@@ -956,7 +1035,7 @@ const BUILDING_LOADING_MESSAGES = [
 ];
 const BUILDING_LOG_SLOT_SECONDS = 2.6;
 
-function TapakBangunanCard({ event, buildings, buildingStage, buildingLayerOn, onToggleBuildingLayer, selectedRadius }) {
+function TapakBangunanCard({ event, buildings, buildingStage, buildingLayerOn, onToggleBuildingLayer, selectedRadius, cardRef, onSaveImage }) {
   const visible = buildings.filter((b) => b.dist <= selectedRadius);
   const classified = visible.filter((b) => b.hazardClass);
   const hasBreakdown = classified.length > 0;
@@ -969,8 +1048,11 @@ function TapakBangunanCard({ event, buildings, buildingStage, buildingLayerOn, o
   const hasDamageEstimate = tinggi > 0 || sedang > 0;
 
   return (
-    <div style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 14, background: 'var(--card-bg)' }}>
-      <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--fg)', marginBottom: 2 }}>Tapak Bangunan</div>
+    <div ref={cardRef} style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 14, background: 'var(--card-bg)' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+        <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--fg)', marginBottom: 2 }}>Tapak Bangunan</div>
+        <div className="print-hide"><SaveImageButton onClick={onSaveImage} /></div>
+      </div>
       <div style={{ fontSize: 10.5, color: 'var(--muted)', marginBottom: 8 }}>Data OpenStreetMap (Overpass API), radius {selectedRadius.toLocaleString('id-ID')} m</div>
 
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
@@ -1061,7 +1143,7 @@ function TapakBangunanCard({ event, buildings, buildingStage, buildingLayerOn, o
 
 function FasilitasCard({
   event, facilityLayers, facilityToggles, onToggleFacility, facilityStatus, facilityData, selectedRadius,
-  infoOpen, onToggleInfo, onRowClick, onShareRow,
+  infoOpen, onToggleInfo, onRowClick, onShareRow, cardRef, onSaveImage,
 }) {
   const groups = facilityLayers
     .filter((f) => facilityToggles[f.key])
@@ -1079,16 +1161,19 @@ function FasilitasCard({
     .filter((g) => g.rows.length > 0);
 
   return (
-    <div style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 14, background: 'var(--card-bg)' }}>
+    <div ref={cardRef} style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 14, background: 'var(--card-bg)' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 }}>
         <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--fg)' }}>Fasilitas Umum di Sekitar</div>
-        <button
-          onClick={onToggleInfo}
-          aria-label="Info sumber data"
-          style={{ width: 18, height: 18, borderRadius: '50%', border: '1px solid var(--border2)', background: 'var(--band)', color: 'var(--muted)', fontSize: 10.5, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
-        >
-          i
-        </button>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }} className="print-hide">
+          <SaveImageButton onClick={onSaveImage} />
+          <button
+            onClick={onToggleInfo}
+            aria-label="Info sumber data"
+            style={{ width: 18, height: 18, borderRadius: '50%', border: '1px solid var(--border2)', background: 'var(--band)', color: 'var(--muted)', fontSize: 10.5, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+          >
+            i
+          </button>
+        </div>
       </div>
       <div style={{ fontSize: 10.5, color: 'var(--muted)', marginBottom: 8 }}>Dalam radius {selectedRadius.toLocaleString('id-ID')} m dari titik kejadian</div>
 
@@ -1187,11 +1272,14 @@ function startAge(label) {
 // breakdown list - all derived from the bundled BPS dataset (bali-demografi-
 // desa.js), matched to the event's own desa/kecamatan. Falls back to a
 // "data belum tersedia" note when there's no match, per the design handoff.
-function DemografiCard({ desaProfile }) {
+function DemografiCard({ desaProfile, cardRef, onSaveImage }) {
   if (!desaProfile) {
     return (
-      <div style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 14, background: 'var(--card-bg)' }}>
-        <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--fg)', marginBottom: 6 }}>Demografi Terdampak</div>
+      <div ref={cardRef} style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 14, background: 'var(--card-bg)' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 6 }}>
+          <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--fg)' }}>Demografi Terdampak</div>
+          <div className="print-hide"><SaveImageButton onClick={onSaveImage} /></div>
+        </div>
         <div style={{ fontSize: 11.5, lineHeight: 1.5 }}>Data profil desa (BPS) belum tersedia untuk lokasi ini.</div>
       </div>
     );
@@ -1200,8 +1288,11 @@ function DemografiCard({ desaProfile }) {
   const disabilityRows = DISABILITY_ROWS.map((d) => ({ ...d, ...desaProfile.disabilitas[d.key] })).filter((d) => d.total > 0);
 
   return (
-    <div style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 14, background: 'var(--card-bg)' }}>
-      <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--fg)', marginBottom: 2 }}>Demografi Terdampak</div>
+    <div ref={cardRef} className="print-page" style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 14, background: 'var(--card-bg)' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+        <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--fg)', marginBottom: 2 }}>Demografi Terdampak</div>
+        <div className="print-hide"><SaveImageButton onClick={onSaveImage} /></div>
+      </div>
       <div style={{ fontSize: 10.5, color: 'var(--muted)', marginBottom: 8 }}>
         {toTitleCase(desaProfile.desa)}, {toTitleCase(desaProfile.kecamatan)} — {desaProfile.jumlahPenduduk.toLocaleString('id-ID')} jiwa{desaProfile.jumlahKK ? `, ${desaProfile.jumlahKK.toLocaleString('id-ID')} KK` : ''}
       </div>
@@ -1266,12 +1357,15 @@ function DemografiCard({ desaProfile }) {
   );
 }
 
-function CuacaCard({ status, weather }) {
+function CuacaCard({ status, weather, cardRef, onSaveImage }) {
   return (
-    <div style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 14, background: 'var(--card-bg)' }}>
+    <div ref={cardRef} style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 14, background: 'var(--card-bg)' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
         <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--fg)' }}>Cuaca Terkini</div>
-        <span style={{ fontSize: 10.5, color: 'var(--muted)' }}>Data: BMKG</span>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <div className="print-hide"><SaveImageButton onClick={onSaveImage} /></div>
+          <span style={{ fontSize: 10.5, color: 'var(--muted)' }}>Data: BMKG</span>
+        </div>
       </div>
       {status === 'loading' && <div style={{ fontSize: 11.5 }}>Memuat cuaca terkini…</div>}
       {status === 'notfound' && <div style={{ fontSize: 11.5 }}>Lokasi tidak ditemukan di data wilayah.</div>}
@@ -1299,14 +1393,17 @@ function CuacaCard({ status, weather }) {
   );
 }
 
-function TotalDampakCard({ event }) {
+function TotalDampakCard({ event, cardRef, onSaveImage }) {
   if (!event) return null;
   const impacts = event.impacts || [];
   const totalKorban = impacts.reduce((s, im) => s + (im.totalKorban || 0), 0) || (event.korbanMeninggal || 0) + (event.korbanLuka || 0) + (event.korbanHilang || 0);
   const totalMengungsi = impacts.reduce((s, im) => s + (im.mengungsiL || 0) + (im.mengungsiP || 0), 0);
   return (
-    <div style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 14, background: 'var(--card-bg)' }}>
-      <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--fg)', marginBottom: 8 }}>Total Dampak Tercatat</div>
+    <div ref={cardRef} style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 14, background: 'var(--card-bg)' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 8 }}>
+        <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--fg)' }}>Total Dampak Tercatat</div>
+        <div className="print-hide"><SaveImageButton onClick={onSaveImage} /></div>
+      </div>
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
         <Chip>👥 {totalKorban} korban</Chip>
         <Chip>🏠 {totalMengungsi} mengungsi</Chip>
@@ -1371,7 +1468,7 @@ function FloatingPanelStack({
 }) {
   const activeFacilities = facilityLayers.filter((f) => facilityToggles[f.key]);
   return (
-    <div style={{ position: 'absolute', bottom: 16, left: 16, zIndex: 401, display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 260 }}>
+    <div className="print-hide" style={{ position: 'absolute', bottom: 16, left: 16, zIndex: 401, display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 260 }}>
       {activeTab === 'pengaturan' && (
         <div style={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 12, padding: 14, boxShadow: 'var(--card-shadow)' }}>
           <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.03em', marginBottom: 10 }}>
