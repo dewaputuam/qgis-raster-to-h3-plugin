@@ -1,10 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import { THEME, themeVars, severityColor } from '../theme.js';
-import { Icon, DisasterIcon, ChevronIcon, disasterMarkerSvgHtml } from '../icons.jsx';
+import { Icon, DisasterIcon, ChevronIcon, disasterMarkerSvgHtml, WeatherIcon } from '../icons.jsx';
 import { api } from '../lib/api.js';
 import { formatRupiah } from '../lib/format.js';
 import { mapFocusUrl } from '../lib/nav.js';
+
+function norm(s) {
+  return (s || '').toString().trim().toLowerCase();
+}
 
 // Shared with App.jsx - dark mode should stay in sync whichever page you're
 // on, not reset when navigating here from the main dashboard.
@@ -65,10 +69,21 @@ export default function AnalisisDetailBencana() {
   const [buildingStage, setBuildingStage] = useState('idle');
   const [buildings, setBuildings] = useState([]);
 
+  // Demographics & weather (Stage 5) - `regions` (kab/kec/desa -> BMKG adm4,
+  // already used elsewhere for the same lookup - see EventDetailCard.jsx)
+  // and `demografiDesa` (the bundled BPS dataset) are each loaded once;
+  // `weatherStatus`/`weather` follow the same loading/notfound/empty/error
+  // states as the existing weather lookups on the main dashboard.
+  const [regions, setRegions] = useState([]);
+  const [weatherStatus, setWeatherStatus] = useState('loading');
+  const [weather, setWeather] = useState(null);
+  const [demografiDesa, setDemografiDesa] = useState([]);
+
   const rootRef = useRef(null);
   const mapElRef = useRef(null);
   const mapRef = useRef(null);
   const impactLayerRef = useRef(null);
+  const impactMarkersRef = useRef({});
   const ringsLayerRef = useRef(null);
   const insetElRef = useRef(null);
   const insetMapRef = useRef(null);
@@ -125,17 +140,19 @@ export default function AnalisisDetailBencana() {
       map.removeLayer(impactLayerRef.current);
       impactLayerRef.current = null;
     }
+    impactMarkersRef.current = {};
     if (!showImpactMarkers) return;
     const group = L.layerGroup();
     (event.impacts || []).forEach((im, i) => {
       if (!Number.isFinite(im.lat) || !Number.isFinite(im.lng)) return;
       const icon = L.divIcon({
         className: '',
-        html: `<div style="width:22px;height:22px;border-radius:50%;background:oklch(55% 0.18 25);color:#fff;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.3);">${i + 1}</div>`,
+        html: `<div class="fac-marker-inner" style="width:22px;height:22px;border-radius:50%;background:oklch(55% 0.18 25);color:#fff;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.3);">${i + 1}</div>`,
         iconSize: [22, 22],
         iconAnchor: [11, 11],
       });
-      L.marker([im.lat, im.lng], { icon }).addTo(group).bindPopup(`<b>Dampak #${i + 1}</b><br/>${im.lokasi || ''}`);
+      const marker = L.marker([im.lat, im.lng], { icon }).addTo(group).bindPopup(`<b>Dampak #${i + 1}</b><br/>${im.lokasi || ''}`);
+      impactMarkersRef.current[i] = marker;
     });
     group.addTo(map);
     impactLayerRef.current = group;
@@ -376,6 +393,36 @@ export default function AnalisisDetailBencana() {
     buildingLayerRef.current = group;
   }, [buildingLayerOn, buildings, selectedRadius]);
 
+  // Regions (kab/kec/desa -> BMKG adm4) - fetched once, same source/shape
+  // already used by EventDetailCard.jsx's weather lookup on the main
+  // dashboard, reused here rather than re-deriving it.
+  useEffect(() => {
+    api.getRegions().then((r) => setRegions(r.data)).catch(() => setRegions([]));
+  }, []);
+
+  useEffect(() => {
+    if (!event || regions.length === 0) return;
+    setWeatherStatus('loading');
+    setWeather(null);
+    const match = regions.find((r) => norm(r.kabupaten) === norm(event.kabupaten) && norm(r.kecamatan) === norm(event.kecamatan) && norm(r.desa) === norm(event.desa));
+    if (!match) { setWeatherStatus('notfound'); return; }
+    api.lookupWeather(match.adm4)
+      .then((r) => {
+        if (!r.data || !r.data.cuaca || !r.data.cuaca.length) { setWeatherStatus('empty'); return; }
+        setWeather(r.data);
+        setWeatherStatus('ok');
+      })
+      .catch(() => setWeatherStatus('error'));
+  }, [event, regions]);
+
+  // BPS village demographic profile dataset (age/sex pyramid + disability
+  // breakdown) - a large (~800KB) bundled static module, dynamically
+  // imported so it doesn't block the initial page bundle, matching the
+  // design handoff's own dynamic import() of the same file.
+  useEffect(() => {
+    import('../data/bali-demografi-desa.js').then((mod) => setDemografiDesa(mod.DEMOGRAFI_DESA || [])).catch(() => setDemografiDesa([]));
+  }, []);
+
   useEffect(() => {
     const onFsChange = () => setIsFullscreen(!!document.fullscreenElement);
     document.addEventListener('fullscreenchange', onFsChange);
@@ -444,6 +491,25 @@ export default function AnalisisDetailBencana() {
     marker.openPopup();
   }
 
+  // Same pan/bounce/popup behavior as bounceFacilityMarker, for the "Dampak
+  // per Lokasi" card's clickable rows (Detil Kejadian tab) - a no-op if the
+  // marker isn't currently on the map (impact markers can be hidden via the
+  // summary card's own checkbox).
+  function focusImpactMarker(idx) {
+    const marker = impactMarkersRef.current[idx];
+    const map = mapRef.current;
+    if (!marker || !map) return;
+    map.panTo(marker.getLatLng(), { animate: true });
+    const el = marker.getElement();
+    const inner = el?.querySelector('.fac-marker-inner');
+    if (inner) {
+      inner.classList.remove('adb-marker-bounce');
+      void inner.offsetWidth;
+      inner.classList.add('adb-marker-bounce');
+    }
+    marker.openPopup();
+  }
+
   function shareFacilityWhatsApp(facilityLabel, row) {
     const lines = [
       '*VERIFIKASI SITUASI FASILITAS UMUM*',
@@ -460,6 +526,8 @@ export default function AnalisisDetailBencana() {
     }
     window.open(`https://wa.me/?text=${encodeURIComponent(lines.join('\n'))}`, '_blank', 'noopener');
   }
+
+  const desaProfile = event ? demografiDesa.find((d) => norm(d.kecamatan) === norm(event.kecamatan) && norm(d.desa) === norm(event.desa)) : null;
 
   const vars = themeVars(darkMode);
   const rootStyle = {
@@ -626,10 +694,14 @@ export default function AnalisisDetailBencana() {
                       onRowClick={bounceFacilityMarker}
                       onShareRow={shareFacilityWhatsApp}
                     />
-                    <PlaceholderCard title="Demografi Terdampak" note="Akan tampil di sini pada tahap berikutnya." />
+                    <DemografiCard desaProfile={desaProfile} />
                   </div>
                 ) : (
-                  <PlaceholderCard title="Detil Kejadian" note="Cuaca Terkini, Total Dampak Tercatat, dan Dampak per Lokasi akan tampil di sini pada tahap berikutnya." />
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    <CuacaCard status={weatherStatus} weather={weather} />
+                    <TotalDampakCard event={event} />
+                    <DampakPerLokasiCard event={event} onLocate={focusImpactMarker} />
+                  </div>
                 )}
               </div>
             </div>
@@ -750,6 +822,10 @@ function radiusAreaKm2(radiusMeters) {
 // a hectare figure per class.
 const CLASS_COLORS = { Rendah: 'oklch(60% 0.12 150)', Sedang: 'oklch(65% 0.14 80)', Tinggi: 'oklch(55% 0.18 30)' };
 const PIXEL_AREA_HA = 0.09;
+
+function toTitleCase(str) {
+  return (str || '').toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+}
 
 function distanceMeters(lat1, lng1, lat2, lng2) {
   const R = 6371000;
@@ -1083,6 +1159,198 @@ function FasilitasCard({
           })}
         </div>
       ))}
+    </div>
+  );
+}
+
+const AGE_PARENT_GROUPS = [
+  { key: 'balita', icon: '👶', sub: '0–9', min: 0, max: 9, color: 'oklch(58% 0.14 235)' },
+  { key: 'anak', icon: '🧒', sub: '10–19', min: 10, max: 19, color: 'oklch(62% 0.13 190)' },
+  { key: 'dewasa', icon: '🧑', sub: '20–59', min: 20, max: 59, color: 'oklch(62% 0.14 350)' },
+  { key: 'lansia', icon: '🧓', sub: '60+', min: 60, max: 999, color: 'oklch(60% 0.15 60)' },
+];
+const DISABILITY_ROWS = [
+  { key: 'fisik', label: 'Fisik', icon: '♿' },
+  { key: 'sensorikNetra', label: 'Netra', icon: '👁' },
+  { key: 'runguWicara', label: 'Rungu Wicara', icon: '👂' },
+  { key: 'mental', label: 'Mental', icon: '🧠' },
+  { key: 'ganda', label: 'Ganda', icon: '✳' },
+  { key: 'intelektual', label: 'Intelektual', icon: '🧩' },
+];
+
+function startAge(label) {
+  return label === '>75' ? 75 : parseInt(label.split('-')[0], 10);
+}
+
+// Age-pyramid-style bar chart (paired L/P bars per 5-year bracket) + a
+// broader 4-group summary row (Balita/Anak/Dewasa/Lansia) + the disability
+// breakdown list - all derived from the bundled BPS dataset (bali-demografi-
+// desa.js), matched to the event's own desa/kecamatan. Falls back to a
+// "data belum tersedia" note when there's no match, per the design handoff.
+function DemografiCard({ desaProfile }) {
+  if (!desaProfile) {
+    return (
+      <div style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 14, background: 'var(--card-bg)' }}>
+        <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--fg)', marginBottom: 6 }}>Demografi Terdampak</div>
+        <div style={{ fontSize: 11.5, lineHeight: 1.5 }}>Data profil desa (BPS) belum tersedia untuk lokasi ini.</div>
+      </div>
+    );
+  }
+  const maxAge = Math.max(...desaProfile.ageGroups.map((a) => Math.max(a.l, a.p)), 1);
+  const disabilityRows = DISABILITY_ROWS.map((d) => ({ ...d, ...desaProfile.disabilitas[d.key] })).filter((d) => d.total > 0);
+
+  return (
+    <div style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 14, background: 'var(--card-bg)' }}>
+      <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--fg)', marginBottom: 2 }}>Demografi Terdampak</div>
+      <div style={{ fontSize: 10.5, color: 'var(--muted)', marginBottom: 8 }}>
+        {toTitleCase(desaProfile.desa)}, {toTitleCase(desaProfile.kecamatan)} — {desaProfile.jumlahPenduduk.toLocaleString('id-ID')} jiwa{desaProfile.jumlahKK ? `, ${desaProfile.jumlahKK.toLocaleString('id-ID')} KK` : ''}
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 5, height: 100, marginTop: 10, padding: '0 2px 6px', borderBottom: '1px solid var(--border)' }}>
+        {desaProfile.ageGroups.map((ag) => (
+          <div key={ag.label} title={`${ag.label} thn — L: ${ag.l.toLocaleString('id-ID')}, P: ${ag.p.toLocaleString('id-ID')}`} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', height: '100%', gap: 6 }}>
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, height: 78 }}>
+              <div style={{ width: 8, height: Math.max(2, (ag.l / maxAge) * 78), background: 'oklch(58% 0.14 235)', borderRadius: '3px 3px 0 0' }} />
+              <div style={{ width: 8, height: Math.max(2, (ag.p / maxAge) * 78), background: 'oklch(62% 0.14 350)', borderRadius: '3px 3px 0 0' }} />
+            </div>
+            <span style={{ fontSize: 9, fontWeight: 600, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{ag.label === '>75' ? '75+' : ag.label.split('-')[0]}</span>
+          </div>
+        ))}
+      </div>
+      <div style={{ display: 'flex', gap: 14, marginTop: 6 }}>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 10.5, color: 'var(--muted)' }}>
+          <span style={{ width: 8, height: 8, borderRadius: 2, background: 'oklch(58% 0.14 235)' }} /> Laki-laki
+        </span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 10.5, color: 'var(--muted)' }}>
+          <span style={{ width: 8, height: 8, borderRadius: 2, background: 'oklch(62% 0.14 350)' }} /> Perempuan
+        </span>
+      </div>
+
+      <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
+        {AGE_PARENT_GROUPS.map((d) => {
+          const bins = desaProfile.ageGroups.filter((ag) => { const a = startAge(ag.label); return a >= d.min && a <= d.max; });
+          const l = bins.reduce((s, ag) => s + ag.l, 0);
+          const p = bins.reduce((s, ag) => s + ag.p, 0);
+          if (bins.length === 0) return null;
+          return (
+            <div key={d.key} style={{ flex: bins.length, minWidth: 44, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, background: 'var(--band)', borderRadius: 9, padding: '8px 6px' }}>
+              <div style={{ width: '100%', height: 3, borderRadius: 2, background: d.color }} />
+              <span style={{ fontSize: 15, lineHeight: 1 }}>{d.icon}</span>
+              <div style={{ display: 'flex', gap: 5 }}>
+                <span style={{ fontSize: 8.5, fontWeight: 700, color: 'oklch(58% 0.14 235)', whiteSpace: 'nowrap' }}>{l.toLocaleString('id-ID')}</span>
+                <span style={{ fontSize: 8.5, fontWeight: 700, color: 'oklch(62% 0.14 350)', whiteSpace: 'nowrap' }}>{p.toLocaleString('id-ID')}</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {disabilityRows.length > 0 && (
+        <>
+          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--fg2)', marginTop: 10 }}>Ragam Disabilitas ({desaProfile.disabilitas.total} jiwa)</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginTop: 5 }}>
+            {disabilityRows.map((d) => (
+              <div key={d.key} style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--band)', borderRadius: 9, padding: '6px 10px' }}>
+                <span style={{ fontSize: 14, flexShrink: 0, width: 26, height: 26, borderRadius: '50%', background: 'color-mix(in oklch, var(--accent) 16%, transparent)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{d.icon}</span>
+                <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'baseline', gap: 6 }}>
+                  <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--fg)' }}>{d.label}</span>
+                  <span style={{ fontSize: 10, color: 'var(--muted)' }}>L: {d.l} · P: {d.p}</span>
+                </div>
+                <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--accent-strong)', flexShrink: 0 }}>{d.total}</span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function CuacaCard({ status, weather }) {
+  return (
+    <div style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 14, background: 'var(--card-bg)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+        <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--fg)' }}>Cuaca Terkini</div>
+        <span style={{ fontSize: 10.5, color: 'var(--muted)' }}>Data: BMKG</span>
+      </div>
+      {status === 'loading' && <div style={{ fontSize: 11.5 }}>Memuat cuaca terkini…</div>}
+      {status === 'notfound' && <div style={{ fontSize: 11.5 }}>Lokasi tidak ditemukan di data wilayah.</div>}
+      {(status === 'empty' || status === 'error') && <div style={{ fontSize: 11.5 }}>Data cuaca terkini tidak tersedia untuk lokasi ini.</div>}
+      {status === 'ok' && weather && (
+        <>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+            <WeatherIcon src={weather.cuaca[0].image} size={30} />
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--fg)' }}>{weather.cuaca[0].t}&deg;C &middot; {weather.cuaca[0].weather_desc}</div>
+              <div style={{ fontSize: 11, color: 'var(--muted)' }}>Kelembapan {weather.cuaca[0].hu}% &middot; {(weather.cuaca[0].local_datetime || '').slice(11, 16)} WITA</div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 10, overflowX: 'auto' }}>
+            {weather.cuaca.slice(1, 7).map((f, i) => (
+              <div key={i} title={f.weather_desc} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, flexShrink: 0, minWidth: 34 }}>
+                <WeatherIcon src={f.image} size={20} />
+                <span style={{ fontSize: 10, color: 'var(--muted)' }}>{(f.local_datetime || '').slice(11, 16)}</span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function TotalDampakCard({ event }) {
+  if (!event) return null;
+  const impacts = event.impacts || [];
+  const totalKorban = impacts.reduce((s, im) => s + (im.totalKorban || 0), 0) || (event.korbanMeninggal || 0) + (event.korbanLuka || 0) + (event.korbanHilang || 0);
+  const totalMengungsi = impacts.reduce((s, im) => s + (im.mengungsiL || 0) + (im.mengungsiP || 0), 0);
+  return (
+    <div style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 14, background: 'var(--card-bg)' }}>
+      <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--fg)', marginBottom: 8 }}>Total Dampak Tercatat</div>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        <Chip>👥 {totalKorban} korban</Chip>
+        <Chip>🏠 {totalMengungsi} mengungsi</Chip>
+        <Chip>🏚 {event.bangunanRb || 0} rusak berat</Chip>
+        <Chip>🏗 {event.bangunanRr || 0} rusak ringan</Chip>
+      </div>
+    </div>
+  );
+}
+
+function DampakPerLokasiCard({ event, onLocate }) {
+  const impacts = event?.impacts || [];
+  if (impacts.length === 0) return null;
+  return (
+    <div style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 14, background: 'var(--card-bg)' }}>
+      <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--fg)', marginBottom: 8 }}>Dampak per Lokasi ({impacts.length})</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {impacts.map((im, i) => (
+          <div
+            key={im.idDetail || i}
+            onClick={() => onLocate(i)}
+            style={{ border: '1px solid var(--border2)', borderRadius: 9, padding: '8px 10px', cursor: Number.isFinite(im.lat) ? 'pointer' : 'default', background: 'var(--band)' }}
+          >
+            <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--fg)' }}>{im.lokasi || `Dampak #${i + 1}`}</div>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', fontSize: 10.5, color: 'var(--muted)', marginTop: 4 }}>
+              <span>🩹 {im.korbanLukaBerat || 0} luka berat</span>
+              <span>🩹 {im.korbanLukaRingan || 0} luka ringan</span>
+              <span>🏠 {(im.mengungsiL || 0) + (im.mengungsiP || 0)} mengungsi</span>
+            </div>
+            {im.penangananTim && (
+              <>
+                <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--muted)', marginTop: 6 }}>Tim Terlibat</div>
+                <div style={{ fontSize: 10.5, color: 'var(--fg2)' }}>{im.penangananTim}</div>
+              </>
+            )}
+            {im.penangananTindakan && (
+              <>
+                <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--muted)', marginTop: 6 }}>Upaya Penanganan</div>
+                <div style={{ fontSize: 10.5, color: 'var(--fg2)' }}>{im.penangananTindakan}</div>
+              </>
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
