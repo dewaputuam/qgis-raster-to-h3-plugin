@@ -67,6 +67,18 @@ router.get('/events', (req, res) => {
   res.json({ data: events });
 });
 
+// Single-event lookup for the "Analisis Detail Bencana" page (reached via a
+// shareable ?uuid= link, so it can't rely on the already-loaded event list
+// from the main dashboard's state). Applies the same kabupaten scope as
+// /events - a scoped account gets a 404 for another kabupaten's event
+// rather than leaking it through a direct-link lookup.
+router.get('/events/:uuid', (req, res) => {
+  const scope = currentKabupatenScope();
+  const ev = db.getEventByUuid(req.params.uuid);
+  if (!ev || (scope && ev.kabupaten !== scope)) return res.status(404).json({ error: 'Kejadian tidak ditemukan' });
+  res.json({ data: { ...ev, locationValid: isPointInKabupaten(ev.kabupaten, ev.lat, ev.lng) } });
+});
+
 router.get('/regions', (req, res) => {
   const scope = currentKabupatenScope();
   const regions = scope ? db.getRegions().filter((r) => r.kabupaten === scope) : db.getRegions();

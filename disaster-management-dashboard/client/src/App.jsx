@@ -30,6 +30,20 @@ export default function App() {
     return () => window.removeEventListener('resize', onResize);
   }, []);
 
+  // Entry point from Analisis Detail Bencana's "back to peta" header button
+  // (see lib/nav.js mapFocusUrl) - a plain query param rather than app
+  // state, since that page is a separate, independently-loaded URL. Cleared
+  // from the address bar right after so a later refresh doesn't re-trigger it.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('openMap') === '1') {
+      const uuid = params.get('uuid');
+      setMapPanelOpen(true);
+      if (uuid) setMapFocusUuid(uuid);
+      window.history.replaceState({}, '', '/');
+    }
+  }, []);
+
   const refreshEvents = useCallback(() => {
     api.getEvents().then((r) => setEvents(r.data)).catch(() => {});
   }, []);

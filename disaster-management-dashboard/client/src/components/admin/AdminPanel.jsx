@@ -13,6 +13,17 @@ const SOURCE_DEFS = {
 const ALLOWED_INTERVALS = [1, 5, 15, 30, 60];
 const ALLOWED_RANGE_MONTHS = [1, 2, 3, 6];
 
+// Read-only reference, not a fetch-status card like SOURCE_DEFS above: these
+// three external GIS APIs are called on-demand, client-side, straight from
+// the "Analisis Detail Bencana" page (no server-side polling/schedule of
+// their own), so there's nothing here to configure - just visibility for
+// ops on what that page depends on.
+const EXTERNAL_SOURCE_DEFS = [
+  { icon: '🛰️', name: 'BNPB InaRISK — Peta Bahaya', desc: 'Layer indeks bahaya per jenis bencana (raster & vektor)', layerCountLabel: '11 layer', authLabel: 'Tanpa login' },
+  { icon: '🏫', name: 'BNPB GIS — Fasilitas Publik', desc: 'Sekolah, fasilitas kesehatan, kantor pemerintah', layerCountLabel: '4 endpoint', authLabel: 'Tanpa login' },
+  { icon: '🏚️', name: 'OpenStreetMap — Tapak Bangunan', desc: 'Overpass API, klasifikasi kelas bahaya per bangunan', layerCountLabel: '1 endpoint', authLabel: 'Tanpa login' },
+];
+
 export default function AdminPanel({ events, regions, onOpenMap }) {
   const [sikStatus, setSikStatus] = useState({ loggedIn: false, username: null, tokenExpiresAt: null });
   const [sources, setSources] = useState([]);
@@ -286,6 +297,8 @@ export default function AdminPanel({ events, regions, onOpenMap }) {
         })}
       </div>
 
+      <ExternalSourceCards />
+
       {sikStatus.loggedIn && (
         <div style={{ marginTop: 32 }}>
           <EventsList events={events} regions={regions} onOpenMap={onOpenMap} />
@@ -357,6 +370,43 @@ function PaginationDiagTable({ diag }) {
         ))}
       </div>
     </details>
+  );
+}
+
+function ExternalSourceCards() {
+  return (
+    <div style={{ marginTop: 32 }}>
+      <h2 style={{ fontSize: 15, fontWeight: 800, margin: '0 0 4px' }}>Sumber Data — Analisis Detail Bencana</h2>
+      <p style={{ fontSize: 12, color: 'var(--muted)', margin: '0 0 14px' }}>
+        Data GIS eksternal yang diambil langsung (on-demand) saat tim membuka halaman analisis detail per wilayah, tanpa jadwal polling.
+      </p>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16 }}>
+        {EXTERNAL_SOURCE_DEFS.map((def) => (
+          <div key={def.name} style={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 14, padding: 20, boxShadow: 'var(--card-shadow)' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, marginBottom: 6 }}>
+              <div style={{ fontSize: 13.5, fontWeight: 700 }}>{def.icon} {def.name}</div>
+              <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 999, whiteSpace: 'nowrap', color: STATUS_META.ok.color, background: STATUS_META.ok.bg }}>
+                Aktif
+              </span>
+            </div>
+            <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 14 }}>{def.desc}</div>
+            <div style={{ display: 'flex', gap: 20, borderTop: '1px solid var(--border)', paddingTop: 10, marginBottom: 10 }}>
+              <div>
+                <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase' }}>Layer / Endpoint</div>
+                <div style={{ fontSize: 12.5, fontWeight: 600 }}>{def.layerCountLabel}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase' }}>Autentikasi</div>
+                <div style={{ fontSize: 12.5, fontWeight: 600 }}>{def.authLabel}</div>
+              </div>
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', borderTop: '1px solid var(--border)', paddingTop: 10 }}>
+              Dipakai di: Analisis Detail Bencana
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 

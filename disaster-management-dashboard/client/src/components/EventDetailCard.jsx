@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { formatRupiah } from '../lib/format.js';
 import { api } from '../lib/api.js';
 import { InfoIcon, WeatherIcon } from '../icons.jsx';
+import { analysisUrl } from '../lib/nav.js';
 import ImpactReportList from './ImpactReportList.jsx';
 
 function norm(s) {
@@ -129,6 +130,29 @@ export default function EventDetailCard({ event, regions, color, onClose }) {
         </div>
 
         <ImpactReportList impacts={impacts} />
+
+        <a
+          href={analysisUrl(event.uuid)}
+          style={{
+            marginTop: 14,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: '100%',
+            fontFamily: 'inherit',
+            fontSize: 12.5,
+            fontWeight: 700,
+            color: 'white',
+            background: 'var(--accent-strong)',
+            border: 'none',
+            borderRadius: 10,
+            padding: '10px 14px',
+            cursor: 'pointer',
+            textDecoration: 'none',
+          }}
+        >
+          🔎 Analisis Detail Bencana
+        </a>
       </div>
 
       <div style={{ position: 'relative' }}>

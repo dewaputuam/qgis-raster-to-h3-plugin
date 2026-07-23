@@ -16,6 +16,7 @@ export const api = {
     const qs = new URLSearchParams(params).toString();
     return req(`/events${qs ? `?${qs}` : ''}`);
   },
+  getEvent: (uuid) => req(`/events/${encodeURIComponent(uuid)}`),
   getRegions: () => req('/regions'),
   getSources: () => req('/admin/sources'),
   getFetchSettings: () => req('/admin/fetch-settings'),

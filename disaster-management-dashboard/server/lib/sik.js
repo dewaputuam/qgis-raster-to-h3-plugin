@@ -110,6 +110,11 @@ function mapImpact(raw) {
   return {
     idDetail: raw.ID_DETAIL ?? null,
     lokasi: raw.LOKASI || '',
+    // Each area_terdampak record carries its own real coordinates (confirmed
+    // in a live response) - used for plotting actual per-impact map markers
+    // (Analisis Detail Bencana) instead of a fabricated scatter position.
+    lat: parseFloat(raw.LATTITUDE),
+    lng: parseFloat(raw.LONGITUDE),
     tglLaporan: raw.TGL_LAPORAN_MASUK || '',
     jamLaporan: raw.JAM_LAPORAN_MASUK || '',
     progress: Number(raw.PROGRESS ?? 0),

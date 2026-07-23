@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { severityColor } from '../theme.js';
 import { DisasterIcon, WeatherIcon } from '../icons.jsx';
 import { formatRupiah } from '../lib/format.js';
+import { analysisUrl } from '../lib/nav.js';
 import ImpactReportList from './ImpactReportList.jsx';
 
 function ForecastRow({ weather }) {
@@ -145,24 +146,49 @@ export default function Hero({ events, weather, onOpenMap, isMobile }) {
           </div>
         )}
 
-        <button
-          onClick={(e) => { e.stopPropagation(); onOpenMap(ev.uuid); }}
-          style={{
-            marginTop: 14,
-            width: '100%',
-            fontFamily: 'inherit',
-            fontSize: 12.5,
-            fontWeight: 700,
-            color: 'white',
-            background: 'var(--accent-strong)',
-            border: 'none',
-            borderRadius: 10,
-            padding: '10px 14px',
-            cursor: 'pointer',
-          }}
-        >
-          📍 Lihat di Peta
-        </button>
+        <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+          <button
+            onClick={(e) => { e.stopPropagation(); onOpenMap(ev.uuid); }}
+            style={{
+              flex: 1,
+              fontFamily: 'inherit',
+              fontSize: 12.5,
+              fontWeight: 700,
+              color: 'white',
+              background: 'var(--accent-strong)',
+              border: 'none',
+              borderRadius: 10,
+              padding: '10px 14px',
+              cursor: 'pointer',
+            }}
+          >
+            📍 Peta
+          </button>
+          <a
+            href={analysisUrl(ev.uuid)}
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              flex: 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 6,
+              fontFamily: 'inherit',
+              fontSize: 12.5,
+              fontWeight: 700,
+              color: 'var(--fg)',
+              background: 'var(--band)',
+              border: '1px solid var(--border2)',
+              borderRadius: 10,
+              padding: '10px 14px',
+              cursor: 'pointer',
+              textDecoration: 'none',
+              textAlign: 'center',
+            }}
+          >
+            🔎 Analisis Detail
+          </a>
+        </div>
       </div>
       </div>
 
